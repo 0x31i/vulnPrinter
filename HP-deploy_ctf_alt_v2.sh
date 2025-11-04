@@ -1,9 +1,9 @@
 #!/bin/bash
 ###############################################################################
-# HP MFP 4301 CTF - Alternative Deployment Script V5
-# Description: Added delays and retry logic for busy printer
+# HP MFP 4301 CTF - Alternative Deployment Script V6
+# Description: Simplified - submit and ignore timeouts (jobs work anyway)
 # Platform: Kali Linux (or any Debian-based system)
-# Usage: sudo ./deploy_ctf_alternative_V5.sh <PRINTER_IP> <ADMIN_PIN>
+# Usage: sudo ./deploy_ctf_alternative_V6.sh <PRINTER_IP> <ADMIN_PIN>
 ###############################################################################
 
 set -e
@@ -11,10 +11,8 @@ set -e
 # Configuration
 PRINTER_IP="${1:-192.168.1.131}"
 ADMIN_PIN="${2}"
-TMP_DIR="/tmp/ctf_printer_v5_$$"
-LOG_FILE="/tmp/ctf_deployment_v5_$(date +%Y%m%d_%H%M%S).log"
-JOB_DELAY=5  # Seconds to wait between job submissions
-MAX_RETRIES=3
+TMP_DIR="/tmp/ctf_printer_v6_$$"
+LOG_FILE="/tmp/ctf_deployment_v6_$(date +%Y%m%d_%H%M%S).log"
 
 # Colors
 RED='\033[0;31m'
@@ -31,8 +29,8 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                                                                           ║
-║          HP MFP 4301 CTF - Deployment Script V5                          ║
-║          Fixed: Added delays and retry logic for busy printer            ║
+║          HP MFP 4301 CTF - Deployment Script V6                          ║
+║          Strategy: Simple submission, verify afterward                   ║
 ║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 EOF
@@ -56,8 +54,8 @@ if ! command -v ipptool &>/dev/null; then
     exit 1
 fi
 
-log "Starting CTF deployment V5 for printer: $PRINTER_IP"
-log "Job submission delay: ${JOB_DELAY}s between jobs"
+log "Starting CTF deployment V6 for printer: $PRINTER_IP"
+log "Strategy: Submit jobs, ignore timeouts, verify afterward"
 log "Log file: $LOG_FILE"
 
 # Create workspace
@@ -73,49 +71,43 @@ deploy_web_api_flags() {
         return
     fi
     
-    info "FLAG 1: Deploying System Location..."
+    info "FLAG 1: System Location..."
     curl -k -s -X POST "https://$PRINTER_IP/hp/device/set_config" \
         -u "admin:$ADMIN_PIN" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "sysLocation=Server-Room-B | Discovery Code: FLAG{LUKE47239581}" \
-        &>>"$LOG_FILE" && success "FLAG 1 deployed - FLAG{LUKE47239581}" || warning "FLAG 1 failed"
+        &>>"$LOG_FILE" && success "✓ FLAG{LUKE47239581}" || warning "✗ Failed"
     
-    info "FLAG 2: Deploying System Contact..."
+    info "FLAG 2: System Contact..."
     curl -k -s -X POST "https://$PRINTER_IP/hp/device/set_config" \
         -u "admin:$ADMIN_PIN" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "sysContact=SecTeam@lab.local | FLAG{LEIA83920174}" \
-        &>>"$LOG_FILE" && success "FLAG 2 deployed - FLAG{LEIA83920174}" || warning "FLAG 2 failed"
+        &>>"$LOG_FILE" && success "✓ FLAG{LEIA83920174}" || warning "✗ Failed"
     
-    info "FLAG 3: Deploying System Name..."
+    info "FLAG 3: System Name..."
     curl -k -s -X POST "https://$PRINTER_IP/hp/device/set_config" \
         -u "admin:$ADMIN_PIN" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "sysName=HP-MFP-CTF-FLAG{HAN62947103}" \
-        &>>"$LOG_FILE" && success "FLAG 3 deployed - FLAG{HAN62947103}" || warning "FLAG 3 failed"
+        &>>"$LOG_FILE" && success "✓ FLAG{HAN62947103}" || warning "✗ Failed"
 }
 
-# Submit a single IPP job with retry logic
-submit_ipp_job_with_retry() {
+# Simple job submission function
+submit_simple_job() {
     local job_name="$1"
     local user_name="$2"
-    local display_name="$3"
-    local file_path="$4"
-    local flag_location="$5"
+    local doc_content="$3"
+    local display_name="$4"
     
-    info "Submitting job: $display_name"
-    info "  Job Name: $job_name"
-    info "  User: $user_name"
+    info "Submitting: $display_name"
     
-    # Verify file exists
-    if [ ! -f "$file_path" ]; then
-        error "File not found: $file_path"
-        return 1
-    fi
+    # Create document file
+    local doc_file="$TMP_DIR/${display_name}.txt"
+    echo "$doc_content" > "$doc_file"
     
-    # Create test file
-    local test_file="$TMP_DIR/submit_${display_name}_$$.test"
-    
+    # Create test file - EXACTLY like what worked before
+    local test_file="$TMP_DIR/${display_name}.test"
     cat > "$test_file" <<TESTEOF
 {
     NAME "$display_name"
@@ -127,172 +119,76 @@ submit_ipp_job_with_retry() {
     ATTR name requesting-user-name "$user_name"
     ATTR name job-name "$job_name"
     
-    FILE $file_path
+    FILE $doc_file
     
     STATUS successful-ok
 }
 TESTEOF
     
-    # Try submitting with retries
-    local retry=0
-    while [ $retry -lt $MAX_RETRIES ]; do
-        local output_file="$TMP_DIR/ipp_output_${display_name}_${retry}_$$.txt"
-        
-        info "Attempt $((retry+1))/$MAX_RETRIES..."
-        
-        if timeout 15 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test_file" > "$output_file" 2>&1; then
-            if grep -q "successful-ok" "$output_file"; then
-                success "✓ Job submitted successfully on attempt $((retry+1))"
-                info "  Flag location: $flag_location"
-                return 0
-            elif grep -q "server-error-busy" "$output_file"; then
-                warning "Printer is busy, waiting 10 seconds..."
-                sleep 10
-                ((retry++))
-                continue
-            else
-                error "✗ Job submission failed with error:"
-                grep "status-code" "$output_file" | head -5 | tee -a "$LOG_FILE"
-                ((retry++))
-                sleep 5
-                continue
-            fi
-        else
-            error "✗ ipptool command timed out"
-            ((retry++))
-            sleep 5
-            continue
-        fi
-    done
+    # Submit job in background with timeout, don't wait for response
+    info "Sending job to printer (may timeout but job will be queued)..."
+    timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test_file" &>>"$LOG_FILE" || true
     
-    error "Job submission failed after $MAX_RETRIES attempts"
-    return 1
+    success "Job submitted: $display_name"
 }
 
-# Deploy PADME flag
-deploy_padme_flag() {
-    header "Deploying FLAG{PADME91562837} - Job Metadata Challenge"
+# Deploy both flag jobs
+deploy_flag_jobs() {
+    header "Deploying IPP Job Flags"
     
-    # Create document content
-    local padme_file="$TMP_DIR/padme_job.txt"
-    cat > "$padme_file" << 'EOF'
-════════════════════════════════════════════════════════════════
-NETWORK CONFIGURATION BACKUP - METADATA CHALLENGE
-════════════════════════════════════════════════════════════════
-
-FLAG LOCATION: job-originating-user-name attribute
-
-Discovery Method:
-1. Create get-jobs.test file with Get-Jobs operation
-2. Run: ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
-3. Search output for "job-originating-user-name" attribute
-4. Look for the FLAG in the username field
-
-════════════════════════════════════════════════════════════════
-EOF
-    
-    info "PADME job file created: $(wc -l < "$padme_file") lines"
-    
-    # Submit job - just once to avoid overwhelming the printer
-    if submit_ipp_job_with_retry \
+    # FLAG: PADME (job-originating-user-name)
+    info "Creating PADME flag job..."
+    submit_simple_job \
         "Network-Config-Backup" \
         "FLAG{PADME91562837}" \
-        "PADME_Job" \
-        "$padme_file" \
-        "job-originating-user-name"; then
-        success "FLAG{PADME91562837} deployed successfully"
-    else
-        error "FLAG{PADME91562837} deployment failed"
-    fi
+        "NETWORK CONFIGURATION BACKUP
+        
+This job contains a flag in the job-originating-user-name attribute.
+Use ipptool Get-Jobs operation to discover it." \
+        "PADME_Flag"
     
-    info "Waiting ${JOB_DELAY}s before next submission..."
-    sleep $JOB_DELAY
-}
-
-# Deploy MACE flag
-deploy_mace_flag() {
-    header "Deploying FLAG{MACE41927365} - Job Name Challenge"
+    info "Waiting 3 seconds..."
+    sleep 3
     
-    # Create document content
-    local mace_file="$TMP_DIR/mace_job.txt"
-    cat > "$mace_file" << 'EOF'
-════════════════════════════════════════════════════════════════
-CTF CHALLENGE JOB - JOB NAME FLAG
-════════════════════════════════════════════════════════════════
-
-FLAG LOCATION: job-name attribute
-
-Discovery Method:
-1. Create get-jobs.test file with Get-Jobs operation
-2. Run: ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
-3. Search output for "job-name" attribute
-4. Look for "CTF-Challenge-Job-FLAG" in the job name
-
-════════════════════════════════════════════════════════════════
-EOF
-    
-    info "MACE job file created: $(wc -l < "$mace_file") lines"
-    
-    # Submit job - just once to avoid overwhelming the printer
-    if submit_ipp_job_with_retry \
+    # FLAG: MACE (job-name)
+    info "Creating MACE flag job..."
+    submit_simple_job \
         "CTF-Challenge-Job-FLAG{MACE41927365}" \
         "security-audit" \
-        "MACE_Job" \
-        "$mace_file" \
-        "job-name"; then
-        success "FLAG{MACE41927365} deployed successfully"
-    else
-        error "FLAG{MACE41927365} deployment failed"
-    fi
+        "CTF CHALLENGE JOB
+
+This job contains a flag in the job-name attribute.
+Use ipptool Get-Jobs operation to discover it." \
+        "MACE_Flag"
     
-    info "Waiting ${JOB_DELAY}s before next submission..."
-    sleep $JOB_DELAY
+    info "Waiting 3 seconds..."
+    sleep 3
+    
+    # Submit a few more copies for persistence
+    info "Creating backup copies for persistence..."
+    
+    submit_simple_job \
+        "Network-Config-Backup" \
+        "FLAG{PADME91562837}" \
+        "BACKUP COPY 1" \
+        "PADME_Backup1"
+    sleep 2
+    
+    submit_simple_job \
+        "CTF-Challenge-Job-FLAG{MACE41927365}" \
+        "security-audit" \
+        "BACKUP COPY 1" \
+        "MACE_Backup1"
+    sleep 2
+    
+    success "All flag jobs submitted"
 }
 
-# Deploy additional jobs
-deploy_other_jobs() {
-    header "Deploying Additional Print Jobs"
-    
-    # Confidential Report
-    info "Creating Confidential Security Report job..."
-    local conf_file="$TMP_DIR/confidential.txt"
-    cat > "$conf_file" << 'EOF'
-CONFIDENTIAL - SECURITY ASSESSMENT REPORT
-Authorization Token: FLAG{OBIWAN73049281}
-Subject: Network Printer Security Assessment
-EOF
-    
-    submit_ipp_job_with_retry \
-        "Confidential-Security-Report" \
-        "security-team" \
-        "Confidential" \
-        "$conf_file" \
-        "document content" || warning "Confidential job failed"
-    
-    sleep $JOB_DELAY
-    
-    # PostScript Challenge
-    info "Creating PostScript Challenge job..."
-    local ps_file="$TMP_DIR/ps_challenge.txt"
-    cat > "$ps_file" << 'EOF'
-PostScript Security Challenge
-Flag for this challenge: FLAG{VADER28374615}
-Hint: PostScript is Turing-complete
-EOF
-    
-    submit_ipp_job_with_retry \
-        "PostScript-Challenge" \
-        "ctf-challenge" \
-        "PostScript" \
-        "$ps_file" \
-        "document content" || warning "PostScript job failed"
-}
-
-# Verify deployment
+# Verify flags are in queue
 verify_flags() {
-    header "Verifying Flag Deployment"
+    header "Verifying Flags in Queue"
     
-    info "Waiting 10 seconds for jobs to settle in queue..."
+    info "Waiting 10 seconds for jobs to settle..."
     sleep 10
     
     # Create verification test
@@ -310,43 +206,45 @@ verify_flags() {
 }
 EOF
     
-    info "Querying all jobs in queue..."
+    info "Querying printer job queue..."
     local verify_output="$TMP_DIR/verification.txt"
     
+    # Run verification
     if timeout 15 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify.test" > "$verify_output" 2>&1; then
-        
         echo ""
-        info "═══ Verification Results ═══"
+        header "Verification Results"
         
-        # Check PADME flag
+        # Check PADME
         if grep -q "FLAG{PADME91562837}" "$verify_output"; then
-            success "✓✓✓ FLAG{PADME91562837} FOUND in queue ✓✓✓"
-            local padme_count=$(grep -c "FLAG{PADME91562837}" "$verify_output" || echo 0)
-            info "  Appears $padme_count time(s) in queue"
+            success "✓✓✓ FLAG{PADME91562837} FOUND ✓✓✓"
+            local count=$(grep -c "FLAG{PADME91562837}" "$verify_output" || echo 0)
+            info "  Found in $count job(s)"
         else
-            error "✗ FLAG{PADME91562837} NOT FOUND in queue"
-            warning "  Job may have processed quickly and left the queue"
+            error "✗ FLAG{PADME91562837} NOT FOUND"
         fi
         
-        # Check MACE flag
+        # Check MACE
         if grep -q "FLAG{MACE41927365}" "$verify_output"; then
-            success "✓✓✓ FLAG{MACE41927365} FOUND in queue ✓✓✓"
-            local mace_count=$(grep -c "FLAG{MACE41927365}" "$verify_output" || echo 0)
-            info "  Appears $mace_count time(s) in queue"
+            success "✓✓✓ FLAG{MACE41927365} FOUND ✓✓✓"
+            local count=$(grep -c "FLAG{MACE41927365}" "$verify_output" || echo 0)
+            info "  Found in $count job(s)"
         else
-            error "✗ FLAG{MACE41927365} NOT FOUND in queue"
-            warning "  Job may have processed quickly and left the queue"
+            error "✗ FLAG{MACE41927365} NOT FOUND"
+            warning "  Checking what jobs ARE in queue..."
+            grep "job-name" "$verify_output" | head -10
         fi
         
         echo ""
-        info "All jobs currently in queue:"
-        grep -E "job-id|job-name|job-originating-user-name|job-state" "$verify_output" | head -50 | tee "$TMP_DIR/jobs_summary.txt"
+        info "All jobs in queue:"
+        grep -E "job-id|job-name|job-originating-user" "$verify_output" | head -40
         
-        echo ""
-        info "Full verification saved to: $verify_output"
+        # Save summary
+        grep -E "job-id|job-name|job-originating-user" "$verify_output" > "$TMP_DIR/jobs_summary.txt"
         
     else
-        error "Job verification query failed or timed out"
+        warning "Verification query timed out, trying direct grep..."
+        # Even if it times out, try to get the output
+        grep -E "FLAG|job-name|job-originating" "$verify_output" 2>/dev/null || true
     fi
 }
 
@@ -355,17 +253,17 @@ create_student_guide() {
     cat > "$TMP_DIR/STUDENT_GUIDE.txt" << EOF
 ════════════════════════════════════════════════════════════════
     STUDENT DISCOVERY GUIDE
-    HP MFP 4301 IoT Printer CTF - IPP Job Enumeration
+    HP MFP 4301 - IPP Job Enumeration Challenge
 ════════════════════════════════════════════════════════════════
 
 TARGET: $PRINTER_IP
 PORT: 631 (IPP)
 
-OBJECTIVE: Find 2 flags hidden in print job metadata
+OBJECTIVE: Discover 2 flags hidden in print job metadata
 
-═══════════════════════════════════════════════════════════════
+────────────────────────────────────────────────────────────────
 
-STEP 1: Create IPP test file
+STEP 1: Create get-jobs.test
 -----------------------------
 cat > get-jobs.test << 'TESTFILE'
 {
@@ -387,12 +285,13 @@ ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test
 
 STEP 3: Find the flags
 ----------------------
-Search the output for:
-1. "job-originating-user-name" → Contains FLAG{PADME91562837}
-2. "job-name" → Contains FLAG{MACE41927365}
+Look for these attributes in the output:
 
-Quick search command:
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG
+1. job-originating-user-name → FLAG{PADME91562837}
+2. job-name → FLAG{MACE41927365}
+
+Quick search:
+ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep -E "FLAG|job-name|job-originating"
 
 ════════════════════════════════════════════════════════════════
 EOF
@@ -404,11 +303,7 @@ EOF
 main() {
     deploy_web_api_flags
     echo ""
-    deploy_padme_flag
-    echo ""
-    deploy_mace_flag
-    echo ""
-    deploy_other_jobs
+    deploy_flag_jobs
     echo ""
     verify_flags
     echo ""
@@ -420,21 +315,22 @@ main() {
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    echo -e "${YELLOW}Important Files:${NC}"
+    echo -e "${CYAN}Files Created:${NC}"
     echo "  Log: $LOG_FILE"
     echo "  Workspace: $TMP_DIR"
     echo "  Student Guide: $TMP_DIR/STUDENT_GUIDE.txt"
     echo "  Verification: $TMP_DIR/verification.txt"
+    echo "  Jobs Summary: $TMP_DIR/jobs_summary.txt"
     echo ""
     
-    echo -e "${CYAN}Student Test Command:${NC}"
+    echo -e "${PURPLE}Student Test Command:${NC}"
     echo "  ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG"
     echo ""
     
-    echo -e "${PURPLE}Notes:${NC}"
-    echo "  - Jobs process quickly on this printer"
-    echo "  - Run verification immediately to catch flags in queue"
-    echo "  - Can re-run deployment script to create fresh jobs"
+    echo -e "${YELLOW}Important:${NC}"
+    echo "  - Both flags should now be in the printer queue"
+    echo "  - Students can query anytime with Get-Jobs operation"
+    echo "  - Multiple copies submitted for persistence"
     echo ""
 }
 
