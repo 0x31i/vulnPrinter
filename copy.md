@@ -13,14 +13,17 @@ printer-info has no direct SNMP equivalent
 Recommended Solutions
 Option 1: Set Flags via IPP/CUPS (Proper Method)
 Instead of SNMP, modify the printer configuration directly using the printer's web interface or CUPS configuration:
-bash# If using CUPS on Linux
+```bash
+# If using CUPS on Linux
 sudo lpadmin -p HP_Color_LaserJet_MFP_4301 \
     -L "Server-Room-B | Discovery Code: FLAG{LUKE47239581}" \
     -o printer-info="HP-MFP-CTF-FLAG{HAN62947103}" \
     -o printer-contact="SecTeam@lab.local | FLAG{LEIA83920174}"
+```
 Option 2: Use PJL Commands (Alternative)
 Deploy flags using PJL filesystem access via port 9100:
-bash# Set environment variables that can be retrieved via PJL
+```bash
+# Set environment variables that can be retrieved via PJL
 cat > deploy_flags.txt << 'EOF'
 %-12345X@PJL
 @PJL SET LOCATION="Server-Room-B | FLAG{LUKE47239581}"
@@ -29,6 +32,8 @@ cat > deploy_flags.txt << 'EOF'
 EOF
 
 nc 192.168.1.131 9100 < deploy_flags.txt
+```
+
 Option 3: Use Printer's Web Interface (EWS)
 Access the HP Embedded Web Server and manually configure:
 
@@ -49,7 +54,8 @@ Set write community string (e.g., "private")
 
 Use correct SNMP OIDs:
 
-bash# Set sysLocation (which MIGHT map to printer-location)
+```bash
+# Set sysLocation (which MIGHT map to printer-location)
 snmpset -v2c -c private 192.168.1.131 1.3.6.1.2.1.1.6.0 s "Server-Room-B | FLAG{LUKE47239581}"
 
 # Set sysContact  
@@ -57,4 +63,6 @@ snmpset -v2c -c private 192.168.1.131 1.3.6.1.2.1.1.4.0 s "SecTeam@lab.local | F
 
 # Set sysName
 snmpset -v2c -c private 192.168.1.131 1.3.6.1.2.1.1.5.0 s "HP-MFP-CTF-FLAG{HAN62947103}"
+```
+
 However, note that even if SNMP writes succeed, there's no guarantee they'll appear in IPP printer attributes since they're different protocol layers.
