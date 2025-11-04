@@ -1,10 +1,9 @@
 #!/bin/bash
 ###############################################################################
-# HP MFP 4301 CTF - Alternative Deployment Script V2
-# Description: Creates multiple copies of jobs to ensure visibility
-# Workaround for: job-hold-until not working, jobs processing immediately
+# HP MFP 4301 CTF - Alternative Deployment Script V3
+# Description: Fixed ipptool syntax with absolute paths
 # Platform: Kali Linux (or any Debian-based system)
-# Usage: sudo ./deploy_ctf_alternative_V2.sh <PRINTER_IP> <ADMIN_PIN>
+# Usage: sudo ./deploy_ctf_alternative_V3.sh <PRINTER_IP> <ADMIN_PIN>
 ###############################################################################
 
 set -e
@@ -12,9 +11,8 @@ set -e
 # Configuration
 PRINTER_IP="${1:-192.168.1.131}"
 ADMIN_PIN="${2}"
-TMP_DIR="/tmp/ctf_printer_v2_$$"
-LOG_FILE="/tmp/ctf_deployment_v2_$(date +%Y%m%d_%H%M%S).log"
-NUM_JOB_COPIES=3  # Create 3 copies of each job for persistence
+TMP_DIR="/tmp/ctf_printer_v3_$$"
+LOG_FILE="/tmp/ctf_deployment_v3_$(date +%Y%m%d_%H%M%S).log"
 
 # Colors
 RED='\033[0;31m'
@@ -31,8 +29,8 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                                                                           ║
-║          HP MFP 4301 CTF - Deployment Script V2                          ║
-║          Strategy: Multiple job copies for persistent queue              ║
+║          HP MFP 4301 CTF - Deployment Script V3                          ║
+║          Fixed: ipptool syntax with absolute file paths                  ║
 ║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 EOF
@@ -46,32 +44,24 @@ info() { echo -e "${BLUE}[INFO]${NC} $1" | tee -a "$LOG_FILE"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1" | tee -a "$LOG_FILE"; }
 header() { echo -e "\n${PURPLE}═══ $1 ═══${NC}" | tee -a "$LOG_FILE"; }
 
-# Check if admin PIN is provided
+# Check requirements
 if [ -z "$ADMIN_PIN" ]; then
-    warning "Admin PIN not provided - some flags may not deploy"
-    warning "Usage: $0 <PRINTER_IP> <ADMIN_PIN>"
-    read -p "Continue without admin PIN? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
+    warning "Admin PIN not provided - skipping web API flags"
 fi
 
-log "Starting CTF deployment V2 for printer: $PRINTER_IP"
-log "Creating $NUM_JOB_COPIES copies of each job for persistence"
+if ! command -v ipptool &>/dev/null; then
+    error "ipptool not installed. Install with: sudo apt install cups-ipp-utils"
+    exit 1
+fi
+
+log "Starting CTF deployment V3 for printer: $PRINTER_IP"
 log "Log file: $LOG_FILE"
 
 # Create workspace
 mkdir -p "$TMP_DIR"
 cd "$TMP_DIR"
 
-# Check for ipptool
-if ! command -v ipptool &>/dev/null; then
-    error "ipptool not installed. Install with: sudo apt install cups-ipp-utils"
-    exit 1
-fi
-
-# Deploy flags via Web API
+# Deploy Web API flags
 deploy_web_api_flags() {
     header "Deploying Flags via Web API"
     
@@ -102,15 +92,81 @@ deploy_web_api_flags() {
         &>>"$LOG_FILE" && success "FLAG 3 deployed - FLAG{HAN62947103}" || warning "FLAG 3 failed"
 }
 
-# Deploy IPP job flags - PADME flag (in job-originating-user-name)
+# Submit a single IPP job with proper error handling
+submit_ipp_job() {
+    local job_name="$1"
+    local user_name="$2"
+    local display_name="$3"
+    local file_path="$4"
+    local flag_location="$5"
+    
+    info "Submitting job: $display_name"
+    info "  Job Name: $job_name"
+    info "  User: $user_name"
+    info "  File: $file_path"
+    
+    # Verify file exists
+    if [ ! -f "$file_path" ]; then
+        error "File not found: $file_path"
+        return 1
+    fi
+    
+    # Create a unique test file for this job
+    local test_file="$TMP_DIR/submit_${display_name}_$$.test"
+    
+    # Use HERE document with proper escaping
+    cat > "$test_file" <<TESTEOF
+{
+    NAME "$display_name"
+    OPERATION Print-Job
+    GROUP operation-attributes-tag
+    ATTR charset attributes-charset utf-8
+    ATTR language attributes-natural-language en
+    ATTR uri printer-uri \$uri
+    ATTR name requesting-user-name "$user_name"
+    ATTR name job-name "$job_name"
+    ATTR mimeMediaType document-format text/plain
+    
+    FILE $file_path
+    
+    STATUS successful-ok
+}
+TESTEOF
+    
+    info "Test file created: $test_file"
+    info "Calling ipptool..."
+    
+    # Run ipptool with timeout
+    local output_file="$TMP_DIR/ipp_output_$$.txt"
+    if timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test_file" > "$output_file" 2>&1; then
+        if grep -q "successful-ok" "$output_file"; then
+            success "✓ Job submitted successfully"
+            info "  Flag location: $flag_location"
+            return 0
+        else
+            error "✗ Job submission returned non-success status"
+            cat "$output_file" | tail -20 | tee -a "$LOG_FILE"
+            return 1
+        fi
+    else
+        error "✗ ipptool command failed or timed out"
+        if [ -f "$output_file" ]; then
+            cat "$output_file" | tail -20 | tee -a "$LOG_FILE"
+        fi
+        return 1
+    fi
+}
+
+# Deploy PADME flag
 deploy_padme_flag() {
     header "Deploying FLAG{PADME91562837} - Job Metadata Challenge"
     
-    # Create document
-    cat > "$TMP_DIR/padme_job.txt" << 'EOF'
-═══════════════════════════════════════════════
+    # Create document content
+    local padme_file="$TMP_DIR/padme_job.txt"
+    cat > "$padme_file" << 'EOF'
+════════════════════════════════════════════════════════════════
 NETWORK CONFIGURATION BACKUP - METADATA CHALLENGE
-═══════════════════════════════════════════════
+════════════════════════════════════════════════════════════════
 
 This print job contains a hidden flag in its metadata.
 
@@ -119,57 +175,39 @@ Discovery Method:
 2. Look for the "job-originating-user-name" attribute
 3. The flag is embedded in the username field
 
-Command:
-ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
+Command to discover:
+  ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
 
-Look for: job-originating-user-name containing FLAG
+Search for: job-originating-user-name attribute containing FLAG
+
+════════════════════════════════════════════════════════════════
 EOF
     
-    # Create test file
-    cat > "$TMP_DIR/padme_job.test" << 'EOF'
-{
-    NAME "PADME Metadata Challenge"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "FLAG{PADME91562837}"
-    ATTR name job-name "Network-Config-Backup"
-    ATTR mimeMediaType document-format text/plain
+    info "PADME job file created: $padme_file ($(wc -l < "$padme_file") lines)"
     
-    FILE padme_job.txt
-    
-    STATUS successful-ok
-}
-EOF
-    
-    # Submit multiple copies
-    local success_count=0
-    for i in $(seq 1 $NUM_JOB_COPIES); do
-        info "Submitting PADME job copy $i/$NUM_JOB_COPIES..."
-        if ipptool -tf "$TMP_DIR/padme_job.txt" "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/padme_job.test" &>>"$LOG_FILE"; then
-            ((success_count++))
-        fi
-        sleep 0.5
-    done
-    
-    if [ $success_count -gt 0 ]; then
-        success "FLAG{PADME91562837} deployed - $success_count/$NUM_JOB_COPIES jobs submitted"
+    # Submit job
+    if submit_ipp_job \
+        "Network-Config-Backup" \
+        "FLAG{PADME91562837}" \
+        "PADME_Metadata" \
+        "$padme_file" \
+        "job-originating-user-name"; then
+        success "FLAG{PADME91562837} deployed successfully"
     else
         error "FLAG{PADME91562837} deployment failed"
     fi
 }
 
-# Deploy IPP job flags - MACE flag (in job-name)
+# Deploy MACE flag
 deploy_mace_flag() {
     header "Deploying FLAG{MACE41927365} - Job Name Challenge"
     
-    # Create document
-    cat > "$TMP_DIR/mace_job.txt" << 'EOF'
-═══════════════════════════════════════════════
+    # Create document content
+    local mace_file="$TMP_DIR/mace_job.txt"
+    cat > "$mace_file" << 'EOF'
+════════════════════════════════════════════════════════════════
 CTF CHALLENGE JOB - JOB NAME FLAG
-═══════════════════════════════════════════════
+════════════════════════════════════════════════════════════════
 
 This print job contains a flag embedded in its job name.
 
@@ -178,158 +216,70 @@ Discovery Method:
 2. Look for the "job-name" attribute
 3. The flag is embedded directly in the job name
 
-Command:
-ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
+Command to discover:
+  ipptool -tv ipp://PRINTER_IP:631/ipp/print get-jobs.test
 
-Look for: job-name containing "CTF-Challenge-Job-FLAG"
+Search for: job-name containing "CTF-Challenge-Job-FLAG"
+
+════════════════════════════════════════════════════════════════
 EOF
     
-    # Create test file - CRITICAL FIX: Proper FILE directive
-    cat > "$TMP_DIR/mace_job.test" << 'EOF'
-{
-    NAME "MACE Job Name Challenge"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "security-audit"
-    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
-    ATTR mimeMediaType document-format text/plain
+    info "MACE job file created: $mace_file ($(wc -l < "$mace_file") lines)"
     
-    FILE mace_job.txt
-    
-    STATUS successful-ok
-}
-EOF
-    
-    # VERIFY FILE EXISTS before submission
-    if [ ! -f "$TMP_DIR/mace_job.txt" ]; then
-        error "MACE job file not found!"
-        return 1
-    fi
-    
-    info "MACE job file verified: $(wc -l < "$TMP_DIR/mace_job.txt") lines"
-    
-    # Submit multiple copies with explicit file path
-    local success_count=0
-    for i in $(seq 1 $NUM_JOB_COPIES); do
-        info "Submitting MACE job copy $i/$NUM_JOB_COPIES..."
-        
-        # Use absolute path and verbose output
-        if ipptool -tv -f "$TMP_DIR/mace_job.txt" "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/mace_job.test" 2>&1 | tee -a "$LOG_FILE" | grep -q "successful-ok"; then
-            ((success_count++))
-            success "  ✓ Copy $i submitted successfully"
-        else
-            warning "  ✗ Copy $i failed"
-        fi
-        sleep 0.5
-    done
-    
-    if [ $success_count -gt 0 ]; then
-        success "FLAG{MACE41927365} deployed - $success_count/$NUM_JOB_COPIES jobs submitted"
+    # Submit job
+    if submit_ipp_job \
+        "CTF-Challenge-Job-FLAG{MACE41927365}" \
+        "security-audit" \
+        "MACE_JobName" \
+        "$mace_file" \
+        "job-name"; then
+        success "FLAG{MACE41927365} deployed successfully"
     else
-        error "FLAG{MACE41927365} deployment FAILED - check log for details"
-        warning "Attempting alternative method..."
-        deploy_mace_flag_alternative
+        error "FLAG{MACE41927365} deployment failed"
     fi
 }
 
-# Alternative method for MACE flag if primary fails
-deploy_mace_flag_alternative() {
-    info "Trying alternative MACE flag deployment method..."
-    
-    # Try with a simpler test file
-    cat > "$TMP_DIR/mace_simple.test" << EOF
-{
-    NAME "MACE Alternative"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR name requesting-user-name "security-audit"
-    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
-    ATTR mimeMediaType document-format text/plain
-    
-    FILE $TMP_DIR/mace_job.txt
-    
-    STATUS successful-ok
-}
-EOF
-    
-    if ipptool -tv -f "$TMP_DIR/mace_job.txt" "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/mace_simple.test" 2>&1 | tee -a "$LOG_FILE" | grep -q "successful-ok"; then
-        success "MACE flag deployed via alternative method"
-    else
-        error "Alternative MACE deployment also failed"
-    fi
-}
-
-# Deploy other print jobs
-deploy_other_print_jobs() {
+# Deploy additional jobs
+deploy_other_jobs() {
     header "Deploying Additional Print Jobs"
     
     # Confidential Report
-    info "Creating Confidential Security Report job..."
-    cat > "$TMP_DIR/confidential.txt" << 'EOF'
+    local conf_file="$TMP_DIR/confidential.txt"
+    cat > "$conf_file" << 'EOF'
 CONFIDENTIAL - SECURITY ASSESSMENT REPORT
 Authorization Token: FLAG{OBIWAN73049281}
 Subject: Network Printer Security Assessment
 EOF
     
-    cat > "$TMP_DIR/confidential.test" << 'EOF'
-{
-    NAME "Confidential Report"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "security-team"
-    ATTR name job-name "Confidential-Security-Report"
-    ATTR mimeMediaType document-format text/plain
-    FILE confidential.txt
-    STATUS successful-ok
-}
-EOF
-    
-    ipptool -tf "$TMP_DIR/confidential.txt" "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/confidential.test" &>>"$LOG_FILE" \
-        && success "Confidential Report job submitted" || warning "Confidential Report failed"
+    submit_ipp_job \
+        "Confidential-Security-Report" \
+        "security-team" \
+        "Confidential" \
+        "$conf_file" \
+        "document content" || warning "Confidential job failed"
     
     # PostScript Challenge
-    info "Creating PostScript Challenge job..."
-    cat > "$TMP_DIR/ps_challenge.txt" << 'EOF'
+    local ps_file="$TMP_DIR/ps_challenge.txt"
+    cat > "$ps_file" << 'EOF'
 PostScript Security Challenge
 Flag for this challenge: FLAG{VADER28374615}
 Hint: PostScript is Turing-complete
 EOF
     
-    cat > "$TMP_DIR/ps_challenge.test" << 'EOF'
-{
-    NAME "PostScript Challenge"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "ctf-challenge"
-    ATTR name job-name "PostScript-Challenge"
-    ATTR mimeMediaType document-format text/plain
-    FILE ps_challenge.txt
-    STATUS successful-ok
-}
-EOF
-    
-    ipptool -tf "$TMP_DIR/ps_challenge.txt" "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/ps_challenge.test" &>>"$LOG_FILE" \
-        && success "PostScript Challenge job submitted" || warning "PostScript Challenge failed"
+    submit_ipp_job \
+        "PostScript-Challenge" \
+        "ctf-challenge" \
+        "PostScript" \
+        "$ps_file" \
+        "document content" || warning "PostScript job failed"
 }
 
 # Verify deployment
 verify_flags() {
     header "Verifying Flag Deployment"
     
-    info "Waiting 3 seconds for jobs to register..."
-    sleep 3
+    info "Waiting 5 seconds for jobs to register in queue..."
+    sleep 5
     
     # Create verification test
     cat > "$TMP_DIR/verify.test" << 'EOF'
@@ -341,69 +291,79 @@ verify_flags() {
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
     ATTR keyword which-jobs all
-    ATTR keyword requested-attributes job-id,job-name,job-originating-user-name,job-state
+    ATTR keyword requested-attributes all
     STATUS successful-ok
 }
 EOF
     
     info "Querying all jobs..."
-    if ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify.test" > "$TMP_DIR/verification.txt" 2>&1; then
+    local verify_output="$TMP_DIR/verification.txt"
+    
+    if timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify.test" > "$verify_output" 2>&1; then
         
         echo ""
         info "═══ Verification Results ═══"
         
         # Check PADME flag
-        if grep -q "FLAG{PADME91562837}" "$TMP_DIR/verification.txt"; then
-            success "✓ FLAG{PADME91562837} FOUND in job-originating-user-name"
-            PADME_COUNT=$(grep -c "FLAG{PADME91562837}" "$TMP_DIR/verification.txt" || echo 0)
-            info "  Found in $PADME_COUNT job(s)"
+        if grep -q "FLAG{PADME91562837}" "$verify_output"; then
+            success "✓ FLAG{PADME91562837} FOUND in queue"
+            local padme_count=$(grep -c "FLAG{PADME91562837}" "$verify_output" || echo 0)
+            info "  Appears $padme_count time(s)"
         else
-            error "✗ FLAG{PADME91562837} NOT FOUND"
+            error "✗ FLAG{PADME91562837} NOT FOUND in queue"
+            warning "  Job may have already processed and left the queue"
         fi
         
         # Check MACE flag
-        if grep -q "FLAG{MACE41927365}" "$TMP_DIR/verification.txt"; then
-            success "✓ FLAG{MACE41927365} FOUND in job-name"
-            MACE_COUNT=$(grep -c "FLAG{MACE41927365}" "$TMP_DIR/verification.txt" || echo 0)
-            info "  Found in $MACE_COUNT job(s)"
+        if grep -q "FLAG{MACE41927365}" "$verify_output"; then
+            success "✓ FLAG{MACE41927365} FOUND in queue"
+            local mace_count=$(grep -c "FLAG{MACE41927365}" "$verify_output" || echo 0)
+            info "  Appears $mace_count time(s)"
         else
-            error "✗ FLAG{MACE41927365} NOT FOUND"
-            warning "  This is the main issue - MACE flag jobs not creating properly"
+            error "✗ FLAG{MACE41927365} NOT FOUND in queue"
+            warning "  Job may have already processed and left the queue"
         fi
         
         echo ""
-        info "Total jobs in queue:"
-        grep -c "job-id (integer)" "$TMP_DIR/verification.txt" || echo "0"
+        info "All jobs in queue:"
+        grep -E "job-id|job-name|job-originating-user-name|job-state" "$verify_output" | tee "$TMP_DIR/jobs_summary.txt"
         
         echo ""
-        info "Job details:"
-        grep -E "job-name|job-originating-user-name" "$TMP_DIR/verification.txt" | head -30
+        info "Full verification output saved to: $verify_output"
         
     else
-        error "Job verification query failed"
+        error "Job verification query failed or timed out"
     fi
 }
 
-# Create student instructions
+# Create student guide
 create_student_guide() {
     header "Creating Student Discovery Guide"
     
     cat > "$TMP_DIR/STUDENT_GUIDE.txt" << EOF
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════
     STUDENT DISCOVERY GUIDE
-    HP MFP 4301 IoT Printer CTF Challenge
-═══════════════════════════════════════════════════════════════
+    HP MFP 4301 IoT Printer CTF - IPP Job Enumeration
+════════════════════════════════════════════════════════════════
 
 TARGET: $PRINTER_IP
+PORT: 631 (IPP)
 
-IPP JOB ENUMERATION FLAGS:
+FLAGS TO DISCOVER:
+------------------
+Two flags are hidden in print job metadata in the printer's queue.
+
+TOOLS NEEDED:
+-------------
+- ipptool (from cups-ipp-utils package)
+- Text editor
+
+STEP-BY-STEP INSTRUCTIONS:
 --------------------------
 
-Two flags are hidden in print job metadata. Use ipptool to discover them.
-
-STEP 1: Create get-jobs.test file
-----------------------------------
-cat > get-jobs.test << 'TESTFILE'
+1. Create the IPP test file:
+   
+   cat > get-jobs.test << 'TESTFILE'
 {
     NAME "Get All Print Jobs"
     OPERATION Get-Jobs
@@ -417,57 +377,74 @@ cat > get-jobs.test << 'TESTFILE'
 }
 TESTFILE
 
-STEP 2: Query the printer
---------------------------
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test
+2. Query the printer for jobs:
+   
+   ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test
 
-STEP 3: Look for flags in the output
--------------------------------------
-Look for these attributes:
-- job-originating-user-name (contains FLAG{PADME...})
-- job-name (contains FLAG{MACE...})
+3. Search the output for flags:
+   
+   Look for these specific attributes:
+   - job-originating-user-name (username field)
+   - job-name (document name field)
 
-HINT: Use grep to filter
-------------------------
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep -E "job-name|job-originating-user-name"
+4. Pro tip - Use grep to filter:
+   
+   ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG
 
-Expected Flags:
-- FLAG{PADME91562837} in job-originating-user-name
-- FLAG{MACE41927365} in job-name
+EXPECTED FLAGS:
+---------------
+FLAG{PADME91562837}  - Hidden in: job-originating-user-name
+FLAG{MACE41927365}   - Hidden in: job-name
 
-═══════════════════════════════════════════════════════════════
+TROUBLESHOOTING:
+----------------
+- If no jobs appear: Jobs may have already processed
+- If only seeing old jobs: Ask instructor to re-deploy
+- If connection fails: Check printer IP and port 631
+
+════════════════════════════════════════════════════════════════
 EOF
     
     success "Student guide created: $TMP_DIR/STUDENT_GUIDE.txt"
+    echo ""
+    cat "$TMP_DIR/STUDENT_GUIDE.txt"
 }
 
 # Main execution
 main() {
     deploy_web_api_flags
+    echo ""
     deploy_padme_flag
+    echo ""
     deploy_mace_flag
-    deploy_other_print_jobs
+    echo ""
+    deploy_other_jobs
+    echo ""
     verify_flags
+    echo ""
     create_student_guide
     
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                   DEPLOYMENT COMPLETE                                     ║${NC}"
+    echo -e "${GREEN}║                     DEPLOYMENT COMPLETE                                   ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    echo -e "${YELLOW}Files Created:${NC}"
-    echo "  Logs: $LOG_FILE"
+    echo -e "${YELLOW}Important Files:${NC}"
+    echo "  Log: $LOG_FILE"
     echo "  Workspace: $TMP_DIR"
     echo "  Student Guide: $TMP_DIR/STUDENT_GUIDE.txt"
     echo "  Verification: $TMP_DIR/verification.txt"
+    echo "  Jobs Summary: $TMP_DIR/jobs_summary.txt"
     echo ""
     
-    echo -e "${CYAN}Student Discovery Command:${NC}"
+    echo -e "${CYAN}Quick Test Command:${NC}"
     echo "  ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG"
     echo ""
     
-    cat "$TMP_DIR/STUDENT_GUIDE.txt"
+    echo -e "${PURPLE}Note:${NC} Jobs may process quickly and leave the queue."
+    echo "If flags aren't visible, re-run this script to create fresh jobs."
+    echo ""
 }
 
 main
