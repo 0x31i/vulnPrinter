@@ -1,9 +1,9 @@
 #!/bin/bash
 ###############################################################################
-# HP MFP 4301 CTF - Alternative Deployment Script V6
-# Description: Simplified - submit and ignore timeouts (jobs work anyway)
+# HP MFP 4301 CTF - Alternative Deployment Script V7
+# Description: Debug version - show actual errors for MACE flag
 # Platform: Kali Linux (or any Debian-based system)
-# Usage: sudo ./deploy_ctf_alternative_V6.sh <PRINTER_IP> <ADMIN_PIN>
+# Usage: sudo ./deploy_ctf_alternative_V7.sh <PRINTER_IP> <ADMIN_PIN>
 ###############################################################################
 
 set -e
@@ -11,8 +11,8 @@ set -e
 # Configuration
 PRINTER_IP="${1:-192.168.1.131}"
 ADMIN_PIN="${2}"
-TMP_DIR="/tmp/ctf_printer_v6_$$"
-LOG_FILE="/tmp/ctf_deployment_v6_$(date +%Y%m%d_%H%M%S).log"
+TMP_DIR="/tmp/ctf_printer_v7_$$"
+LOG_FILE="/tmp/ctf_deployment_v7_$(date +%Y%m%d_%H%M%S).log"
 
 # Colors
 RED='\033[0;31m'
@@ -29,8 +29,8 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                                                                           ║
-║          HP MFP 4301 CTF - Deployment Script V6                          ║
-║          Strategy: Simple submission, verify afterward                   ║
+║          HP MFP 4301 CTF - Deployment Script V7 (DEBUG)                  ║
+║          Strategy: Show real errors, test different job names            ║
 ║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 EOF
@@ -44,18 +44,12 @@ info() { echo -e "${BLUE}[INFO]${NC} $1" | tee -a "$LOG_FILE"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1" | tee -a "$LOG_FILE"; }
 header() { echo -e "\n${PURPLE}═══ $1 ═══${NC}" | tee -a "$LOG_FILE"; }
 
-# Check requirements
-if [ -z "$ADMIN_PIN" ]; then
-    warning "Admin PIN not provided - skipping web API flags"
-fi
-
 if ! command -v ipptool &>/dev/null; then
     error "ipptool not installed. Install with: sudo apt install cups-ipp-utils"
     exit 1
 fi
 
-log "Starting CTF deployment V6 for printer: $PRINTER_IP"
-log "Strategy: Submit jobs, ignore timeouts, verify afterward"
+log "Starting CTF deployment V7 (DEBUG MODE) for printer: $PRINTER_IP"
 log "Log file: $LOG_FILE"
 
 # Create workspace
@@ -93,31 +87,28 @@ deploy_web_api_flags() {
         &>>"$LOG_FILE" && success "✓ FLAG{HAN62947103}" || warning "✗ Failed"
 }
 
-# Simple job submission function
-submit_simple_job() {
-    local job_name="$1"
-    local user_name="$2"
-    local doc_content="$3"
-    local display_name="$4"
+# Deploy PADME flag (we know this works)
+deploy_padme_flag() {
+    header "Deploying FLAG{PADME91562837} (Known Working Method)"
     
-    info "Submitting: $display_name"
+    local doc_file="$TMP_DIR/padme_job.txt"
+    cat > "$doc_file" << 'EOF'
+NETWORK CONFIGURATION BACKUP
+
+This job contains FLAG{PADME91562837} in the job-originating-user-name attribute.
+EOF
     
-    # Create document file
-    local doc_file="$TMP_DIR/${display_name}.txt"
-    echo "$doc_content" > "$doc_file"
-    
-    # Create test file - EXACTLY like what worked before
-    local test_file="$TMP_DIR/${display_name}.test"
+    local test_file="$TMP_DIR/padme_job.test"
     cat > "$test_file" <<TESTEOF
 {
-    NAME "$display_name"
+    NAME "PADME Job"
     OPERATION Print-Job
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri \$uri
-    ATTR name requesting-user-name "$user_name"
-    ATTR name job-name "$job_name"
+    ATTR name requesting-user-name "FLAG{PADME91562837}"
+    ATTR name job-name "Network-Config-Backup"
     
     FILE $doc_file
     
@@ -125,73 +116,132 @@ submit_simple_job() {
 }
 TESTEOF
     
-    # Submit job in background with timeout, don't wait for response
-    info "Sending job to printer (may timeout but job will be queued)..."
+    info "Submitting PADME job..."
     timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test_file" &>>"$LOG_FILE" || true
-    
-    success "Job submitted: $display_name"
+    success "PADME job submitted"
+    sleep 3
 }
 
-# Deploy both flag jobs
-deploy_flag_jobs() {
-    header "Deploying IPP Job Flags"
+# Test MACE flag with different job name formats
+deploy_mace_flag_tests() {
+    header "Testing MACE Flag with Different Job Name Formats"
     
-    # FLAG: PADME (job-originating-user-name)
-    info "Creating PADME flag job..."
-    submit_simple_job \
-        "Network-Config-Backup" \
-        "FLAG{PADME91562837}" \
-        "NETWORK CONFIGURATION BACKUP
-        
-This job contains a flag in the job-originating-user-name attribute.
-Use ipptool Get-Jobs operation to discover it." \
-        "PADME_Flag"
-    
-    info "Waiting 3 seconds..."
-    sleep 3
-    
-    # FLAG: MACE (job-name)
-    info "Creating MACE flag job..."
-    submit_simple_job \
-        "CTF-Challenge-Job-FLAG{MACE41927365}" \
-        "security-audit" \
-        "CTF CHALLENGE JOB
+    local doc_file="$TMP_DIR/mace_job.txt"
+    cat > "$doc_file" << 'EOF'
+CTF CHALLENGE JOB
 
-This job contains a flag in the job-name attribute.
-Use ipptool Get-Jobs operation to discover it." \
-        "MACE_Flag"
+This job should contain FLAG{MACE41927365} in the job-name attribute.
+EOF
     
-    info "Waiting 3 seconds..."
+    # TEST 1: Try original format
+    info "TEST 1: Original format with flag in job-name"
+    local test1="$TMP_DIR/mace_test1.test"
+    cat > "$test1" <<TESTEOF
+{
+    NAME "MACE Test 1"
+    OPERATION Print-Job
+    GROUP operation-attributes-tag
+    ATTR charset attributes-charset utf-8
+    ATTR language attributes-natural-language en
+    ATTR uri printer-uri \$uri
+    ATTR name requesting-user-name "security-audit"
+    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
+    
+    FILE $doc_file
+    
+    STATUS successful-ok
+}
+TESTEOF
+    
+    info "Submitting with full flag in job-name..."
+    local output1="$TMP_DIR/mace_test1_output.txt"
+    if timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test1" > "$output1" 2>&1; then
+        if grep -q "successful-ok" "$output1"; then
+            success "✓ TEST 1 SUCCESS - Original format works!"
+        else
+            warning "✗ TEST 1 FAILED - Error:"
+            grep "status-code\|EXPECTED" "$output1" | head -5
+        fi
+    else
+        warning "✗ TEST 1 TIMED OUT"
+    fi
     sleep 3
     
-    # Submit a few more copies for persistence
-    info "Creating backup copies for persistence..."
+    # TEST 2: Try putting flag in username instead
+    info "TEST 2: Flag in username field (like PADME)"
+    local test2="$TMP_DIR/mace_test2.test"
+    cat > "$test2" <<TESTEOF
+{
+    NAME "MACE Test 2"
+    OPERATION Print-Job
+    GROUP operation-attributes-tag
+    ATTR charset attributes-charset utf-8
+    ATTR language attributes-natural-language en
+    ATTR uri printer-uri \$uri
+    ATTR name requesting-user-name "FLAG{MACE41927365}"
+    ATTR name job-name "CTF-Challenge-Job"
     
-    submit_simple_job \
-        "Network-Config-Backup" \
-        "FLAG{PADME91562837}" \
-        "BACKUP COPY 1" \
-        "PADME_Backup1"
-    sleep 2
+    FILE $doc_file
     
-    submit_simple_job \
-        "CTF-Challenge-Job-FLAG{MACE41927365}" \
-        "security-audit" \
-        "BACKUP COPY 1" \
-        "MACE_Backup1"
-    sleep 2
+    STATUS successful-ok
+}
+TESTEOF
     
-    success "All flag jobs submitted"
+    info "Submitting with flag in username (job-originating-user-name)..."
+    local output2="$TMP_DIR/mace_test2_output.txt"
+    if timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test2" > "$output2" 2>&1; then
+        if grep -q "successful-ok" "$output2"; then
+            success "✓ TEST 2 SUCCESS - Flag in username works!"
+        else
+            warning "✗ TEST 2 FAILED - Error:"
+            grep "status-code\|EXPECTED" "$output2" | head -5
+        fi
+    else
+        warning "✗ TEST 2 TIMED OUT"
+    fi
+    sleep 3
+    
+    # TEST 3: Try simpler job name
+    info "TEST 3: Shorter job name without special characters"
+    local test3="$TMP_DIR/mace_test3.test"
+    cat > "$test3" <<TESTEOF
+{
+    NAME "MACE Test 3"
+    OPERATION Print-Job
+    GROUP operation-attributes-tag
+    ATTR charset attributes-charset utf-8
+    ATTR language attributes-natural-language en
+    ATTR uri printer-uri \$uri
+    ATTR name requesting-user-name "security-audit"
+    ATTR name job-name "CTF-Job-MACE41927365"
+    
+    FILE $doc_file
+    
+    STATUS successful-ok
+}
+TESTEOF
+    
+    info "Submitting with simplified job-name (no curly braces)..."
+    local output3="$TMP_DIR/mace_test3_output.txt"
+    if timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test3" > "$output3" 2>&1; then
+        if grep -q "successful-ok" "$output3"; then
+            success "✓ TEST 3 SUCCESS - Simplified name works!"
+        else
+            warning "✗ TEST 3 FAILED - Error:"
+            grep "status-code\|EXPECTED" "$output3" | head -5
+        fi
+    else
+        warning "✗ TEST 3 TIMED OUT"
+    fi
 }
 
-# Verify flags are in queue
+# Verify what's actually in the queue
 verify_flags() {
-    header "Verifying Flags in Queue"
+    header "Verifying What's Actually in Queue"
     
     info "Waiting 10 seconds for jobs to settle..."
     sleep 10
     
-    # Create verification test
     cat > "$TMP_DIR/verify.test" << 'EOF'
 {
     NAME "Verify Jobs"
@@ -209,128 +259,70 @@ EOF
     info "Querying printer job queue..."
     local verify_output="$TMP_DIR/verification.txt"
     
-    # Run verification
     if timeout 15 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify.test" > "$verify_output" 2>&1; then
-        echo ""
-        header "Verification Results"
         
-        # Check PADME
+        echo ""
+        header "Jobs Found in Queue"
+        
+        # Check for PADME
+        echo ""
+        info "Checking for PADME flag..."
         if grep -q "FLAG{PADME91562837}" "$verify_output"; then
-            success "✓✓✓ FLAG{PADME91562837} FOUND ✓✓✓"
-            local count=$(grep -c "FLAG{PADME91562837}" "$verify_output" || echo 0)
-            info "  Found in $count job(s)"
+            success "✓ FLAG{PADME91562837} FOUND"
         else
             error "✗ FLAG{PADME91562837} NOT FOUND"
         fi
         
-        # Check MACE
-        if grep -q "FLAG{MACE41927365}" "$verify_output"; then
-            success "✓✓✓ FLAG{MACE41927365} FOUND ✓✓✓"
-            local count=$(grep -c "FLAG{MACE41927365}" "$verify_output" || echo 0)
-            info "  Found in $count job(s)"
+        # Check for MACE
+        echo ""
+        info "Checking for MACE flag..."
+        if grep -q "MACE41927365" "$verify_output"; then
+            success "✓ MACE flag FOUND!"
+            info "Looking for where it appears..."
+            grep -A 2 -B 2 "MACE41927365" "$verify_output" | head -20
         else
-            error "✗ FLAG{MACE41927365} NOT FOUND"
-            warning "  Checking what jobs ARE in queue..."
-            grep "job-name" "$verify_output" | head -10
+            error "✗ MACE flag NOT FOUND"
         fi
         
         echo ""
-        info "All jobs in queue:"
-        grep -E "job-id|job-name|job-originating-user" "$verify_output" | head -40
+        info "All job names in queue:"
+        grep "job-name" "$verify_output" | head -20
         
-        # Save summary
-        grep -E "job-id|job-name|job-originating-user" "$verify_output" > "$TMP_DIR/jobs_summary.txt"
+        echo ""
+        info "All usernames in queue:"
+        grep "job-originating-user-name" "$verify_output" | head -20
         
     else
-        warning "Verification query timed out, trying direct grep..."
-        # Even if it times out, try to get the output
-        grep -E "FLAG|job-name|job-originating" "$verify_output" 2>/dev/null || true
+        warning "Verification timed out"
     fi
-}
-
-# Create student guide
-create_student_guide() {
-    cat > "$TMP_DIR/STUDENT_GUIDE.txt" << EOF
-════════════════════════════════════════════════════════════════
-    STUDENT DISCOVERY GUIDE
-    HP MFP 4301 - IPP Job Enumeration Challenge
-════════════════════════════════════════════════════════════════
-
-TARGET: $PRINTER_IP
-PORT: 631 (IPP)
-
-OBJECTIVE: Discover 2 flags hidden in print job metadata
-
-────────────────────────────────────────────────────────────────
-
-STEP 1: Create get-jobs.test
------------------------------
-cat > get-jobs.test << 'TESTFILE'
-{
-    NAME "Get All Print Jobs"
-    OPERATION Get-Jobs
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR keyword which-jobs all
-    ATTR keyword requested-attributes all
-    STATUS successful-ok
-}
-TESTFILE
-
-STEP 2: Query the printer
---------------------------
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test
-
-STEP 3: Find the flags
-----------------------
-Look for these attributes in the output:
-
-1. job-originating-user-name → FLAG{PADME91562837}
-2. job-name → FLAG{MACE41927365}
-
-Quick search:
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep -E "FLAG|job-name|job-originating"
-
-════════════════════════════════════════════════════════════════
-EOF
-    
-    success "Student guide created: $TMP_DIR/STUDENT_GUIDE.txt"
 }
 
 # Main execution
 main() {
     deploy_web_api_flags
     echo ""
-    deploy_flag_jobs
+    deploy_padme_flag
+    echo ""
+    deploy_mace_flag_tests
     echo ""
     verify_flags
-    echo ""
-    create_student_guide
     
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                     DEPLOYMENT COMPLETE                                   ║${NC}"
+    echo -e "${GREEN}║                     DEBUG DEPLOYMENT COMPLETE                             ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}Test Results Summary:${NC}"
+    echo "  Check the output above to see which MACE test succeeded"
+    echo "  Whichever test worked is the format we'll use in final script"
     echo ""
     
     echo -e "${CYAN}Files Created:${NC}"
     echo "  Log: $LOG_FILE"
     echo "  Workspace: $TMP_DIR"
-    echo "  Student Guide: $TMP_DIR/STUDENT_GUIDE.txt"
+    echo "  Test Outputs: $TMP_DIR/mace_test*_output.txt"
     echo "  Verification: $TMP_DIR/verification.txt"
-    echo "  Jobs Summary: $TMP_DIR/jobs_summary.txt"
-    echo ""
-    
-    echo -e "${PURPLE}Student Test Command:${NC}"
-    echo "  ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG"
-    echo ""
-    
-    echo -e "${YELLOW}Important:${NC}"
-    echo "  - Both flags should now be in the printer queue"
-    echo "  - Students can query anytime with Get-Jobs operation"
-    echo "  - Multiple copies submitted for persistence"
     echo ""
 }
 
