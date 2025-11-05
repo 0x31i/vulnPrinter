@@ -1,199 +1,188 @@
 #!/bin/bash
 ################################################################################
-# Test Different Job Hold Methods
-# Find which method keeps jobs in upcoming/in-progress state
+# HP Printer CTF Flag Deployment - Final Version
+# Jobs are found in "completed" history, not active queue
 ################################################################################
 
 PRINTER_IP="192.168.1.131"
 PRINTER_URI="ipp://${PRINTER_IP}:631/ipp/print"
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║     Testing Job Hold Methods                                   ║"
+echo "║     HP Printer CTF Flag Deployment                            ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Create test document
-cat > /tmp/test_doc.txt << 'EOF'
-Test document for job hold testing
-EOF
+################################################################################
+# SNMP FLAGS
+################################################################################
 
-# Test 1: job-hold-until indefinite
-echo "[Test 1] Trying: job-hold-until indefinite"
-cat > /tmp/test1.test << 'EOF'
+echo "[1/3] Deploying SNMP flags..."
+echo ""
+
+# LUKE flag - visible in both SNMP and IPP
+echo "  → Deploying FLAG{LUKE47239581} via SNMP sysLocation..."
+snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 s "Server-Room-B | FLAG{LUKE47239581}"
+
+# LEIA flag - visible ONLY in SNMP (not IPP)
+echo "  → Deploying FLAG{LEIA83920174} via SNMP sysContact..."
+snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 s "SecTeam@lab.local | FLAG{LEIA83920174}"
+
+echo ""
+
+################################################################################
+# PRINT JOB FLAGS
+################################################################################
+
+echo "[2/3] Deploying print job flags..."
+echo ""
+
+# Create document
+cat > /tmp/ctf_document.txt << 'DOCEOF'
+╔════════════════════════════════════════════════════════════════╗
+║               CTF CHALLENGE DOCUMENT                           ║
+║               TOP SECRET - AUTHORIZED PERSONNEL ONLY           ║
+╚════════════════════════════════════════════════════════════════╝
+
+Document Classification: CONFIDENTIAL
+Security Level: RESTRICTED
+
+This print job was submitted by a security audit team.
+Job metadata contains flags for penetration testing assessment.
+DOCEOF
+
+# Create IPP test file for job submission
+cat > /tmp/submit-job.test << 'EOF'
 {
-    NAME "Test indefinite"
+    NAME "Submit CTF Job"
     OPERATION Print-Job
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "test-indefinite"
-    ATTR name job-name "Test-Indefinite"
-    ATTR keyword job-hold-until indefinite
-    FILE /tmp/test_doc.txt
+    ATTR name requesting-user-name "FLAG{PADME91562837}"
+    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
+    
+    FILE /tmp/ctf_document.txt
+    
     STATUS successful-ok
 }
 EOF
-ipptool ${PRINTER_URI} /tmp/test1.test
-sleep 2
-cat > /tmp/check.test << 'EOF'
+
+# Submit job
+echo "  → Submitting job with PADME and MACE flags..."
+ipptool -tv ${PRINTER_URI} /tmp/submit-job.test | grep -E "successful|job-id"
+
+# Wait for job to process
+echo "  → Waiting for job to complete..."
+sleep 3
+
+# Cleanup
+rm /tmp/ctf_document.txt /tmp/submit-job.test
+
+echo ""
+
+################################################################################
+# MANUAL CONFIGURATION
+################################################################################
+
+echo "[3/3] Manual web configuration required for HAN flag:"
+echo ""
+echo "  URL: https://${PRINTER_IP}"
+echo "  Path: General → About The Printer → Configure Information → Nickname"
+echo "  Value: HP-MFP-CTF-FLAG{HAN62947103}"
+echo ""
+read -p "Press ENTER when HAN flag is configured..." 
+echo ""
+
+################################################################################
+# VERIFICATION
+################################################################################
+
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                    VERIFICATION                                ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Verify SNMP flags
+echo "[SNMP] Checking sysLocation and sysContact..."
+snmpget -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 2>/dev/null | grep -o "FLAG{[^}]*}"
+snmpget -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 2>/dev/null | grep -o "FLAG{[^}]*}"
+echo ""
+
+# Verify print jobs in COMPLETED/HISTORY
+echo "[IPP] Checking completed jobs (history)..."
+
+# Create test file to query completed jobs
+cat > /tmp/get-completed-jobs.test << 'EOF'
 {
-    NAME "Check Jobs"
+    NAME "Get Completed Jobs"
     OPERATION Get-Jobs
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
-    ATTR uri printer-uri $uri
-    ATTR keyword which-jobs not-completed
-    STATUS successful-ok
-}
-EOF
-RESULT=$(ipptool -tv ${PRINTER_URI} /tmp/check.test 2>/dev/null | grep -c "test-indefinite")
-if [ $RESULT -gt 0 ]; then
-    echo "✅ WORKS - Job is in not-completed queue"
-else
-    echo "❌ FAILED - Job not in active queue"
-fi
-echo ""
-
-# Test 2: job-hold-until no-hold (should process immediately but might stay pending)
-echo "[Test 2] Trying: job-hold-until no-hold"
-cat > /tmp/test2.test << 'EOF'
-{
-    NAME "Test no-hold"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "test-no-hold"
-    ATTR name job-name "Test-NoHold"
-    ATTR keyword job-hold-until no-hold
-    FILE /tmp/test_doc.txt
+    ATTR keyword which-jobs completed
+    ATTR keyword requested-attributes job-id,job-name,job-originating-user-name,job-state
     STATUS successful-ok
 }
 EOF
-ipptool ${PRINTER_URI} /tmp/test2.test
-sleep 1
-RESULT=$(ipptool -tv ${PRINTER_URI} /tmp/check.test 2>/dev/null | grep -c "test-no-hold")
-if [ $RESULT -gt 0 ]; then
-    echo "✅ WORKS - Job is in not-completed queue"
-else
-    echo "❌ FAILED - Job not in active queue"
-fi
+
+ipptool -tv ${PRINTER_URI} /tmp/get-completed-jobs.test 2>/dev/null | grep -E "job-originating-user-name|job-name" | grep FLAG
+
+rm /tmp/get-completed-jobs.test
 echo ""
 
-# Test 3: Specific future time (1 hour from now)
-echo "[Test 3] Trying: job-hold-until with future time"
-FUTURE_TIME=$(date -u -d '+1 hour' '+%Y-%m-%dT%H:%M:%S.000Z')
-cat > /tmp/test3.test << EOF
-{
-    NAME "Test future time"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR name requesting-user-name "test-future"
-    ATTR name job-name "Test-Future"
-    ATTR keyword job-hold-until ${FUTURE_TIME}
-    FILE /tmp/test_doc.txt
-    STATUS successful-ok
-}
-EOF
-ipptool ${PRINTER_URI} /tmp/test3.test
-sleep 2
-RESULT=$(ipptool -tv ${PRINTER_URI} /tmp/check.test 2>/dev/null | grep -c "test-future")
-if [ $RESULT -gt 0 ]; then
-    echo "✅ WORKS - Job is in not-completed queue"
-else
-    echo "❌ FAILED - Job not in active queue"
-fi
-echo ""
+# Verify IPP printer attributes
+echo "[IPP] Checking printer attributes..."
 
-# Test 4: Using printer operation-supported values
-echo "[Test 4] Checking printer-supported job-hold-until values..."
-cat > /tmp/check-supported.test << 'EOF'
+cat > /tmp/get-printer-attributes.test << 'EOF'
 {
-    NAME "Check Supported Values"
+    NAME "Get Printer Attributes"
     OPERATION Get-Printer-Attributes
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
-    ATTR uri printer-uri $uri
-    ATTR keyword requested-attributes job-hold-until-supported
-    STATUS successful-ok
-}
-EOF
-echo "Supported values:"
-ipptool -tv ${PRINTER_URI} /tmp/check-supported.test 2>/dev/null | grep "job-hold-until-supported"
-echo ""
-
-# Test 5: Pause the print queue first, then submit
-echo "[Test 5] Trying: Pause queue, submit job, leave paused"
-echo "NOTE: This requires printer control permissions"
-cat > /tmp/test5-pause.test << 'EOF'
-{
-    NAME "Pause Printer"
-    OPERATION Pause-Printer
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR uri printer-uri $uri
-    STATUS successful-ok
-}
-EOF
-
-cat > /tmp/test5-submit.test << 'EOF'
-{
-    NAME "Submit to paused printer"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "test-paused"
-    ATTR name job-name "Test-Paused"
-    FILE /tmp/test_doc.txt
+    ATTR keyword requested-attributes printer-location,printer-contact,printer-info,printer-name
     STATUS successful-ok
 }
 EOF
 
-ipptool ${PRINTER_URI} /tmp/test5-pause.test 2>&1 | head -3
-sleep 1
-ipptool ${PRINTER_URI} /tmp/test5-submit.test
-sleep 2
-RESULT=$(ipptool -tv ${PRINTER_URI} /tmp/check.test 2>/dev/null | grep -c "test-paused")
-if [ $RESULT -gt 0 ]; then
-    echo "✅ WORKS - Job is in not-completed queue (printer paused)"
-else
-    echo "❌ FAILED - Job not in active queue"
-fi
+ipptool -tv ${PRINTER_URI} /tmp/get-printer-attributes.test 2>/dev/null | grep FLAG
+
+rm /tmp/get-printer-attributes.test
 echo ""
 
-# Clean up
-rm /tmp/test*.test /tmp/check*.test /tmp/test_doc.txt
+################################################################################
+# DEPLOYMENT SUMMARY
+################################################################################
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                    RESULTS SUMMARY                             ║"
+echo "║                  DEPLOYMENT COMPLETE                           ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Check which test showed ✅ WORKS above."
+echo "Deployed Flags:"
+echo "  ✓ FLAG{LUKE47239581}  - SNMP sysLocation (visible in IPP too)"
+echo "  ✓ FLAG{LEIA83920174}  - SNMP sysContact (SNMP ONLY)"
+echo "  ✓ FLAG{HAN62947103}   - Web Interface → IPP printer-info"
+echo "  ✓ FLAG{PADME91562837} - Print job history (completed jobs)"
+echo "  ✓ FLAG{MACE41927365}  - Print job history (completed jobs)"
 echo ""
-echo "To see all current jobs (not-completed):"
-cat > /tmp/final-check.test << 'EOF'
-{
-    NAME "Final Check"
-    OPERATION Get-Jobs
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR uri printer-uri $uri
-    ATTR keyword which-jobs not-completed
-    ATTR keyword requested-attributes job-id,job-name,job-originating-user-name,job-state,job-state-reasons
-    STATUS successful-ok
-}
-EOF
-ipptool -tv ${PRINTER_URI} /tmp/final-check.test
-rm /tmp/final-check.test
+echo "Student Discovery Commands:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "# SNMP Enumeration (finds LUKE + LEIA)"
+echo "snmpwalk -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1"
+echo ""
+echo "# IPP Printer Attributes (finds LUKE + HAN)"
+echo "ipptool -tv ipp://${PRINTER_IP}:631/ipp/print get-printer-attributes.test | grep FLAG"
+echo ""
+echo "# IPP Completed Jobs (finds PADME + MACE) - USE THIS ONE!"
+echo "ipptool -tv ipp://${PRINTER_IP}:631/ipp/print get-completed-jobs.test | grep FLAG"
+echo ""
+echo "Teaching Point:"
+echo "  Students must query 'completed' jobs, not 'all' or 'not-completed'"
+echo "  This teaches thorough enumeration of job history"
+echo ""
 
-echo ""
-echo "If Test 5 (paused queue) worked, you can resume with:"
-echo "  (But leave it paused for CTF so jobs stay in queue)"
-echo ""
+exit 0
