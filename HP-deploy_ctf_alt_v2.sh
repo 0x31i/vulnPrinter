@@ -1,52 +1,25 @@
 #!/bin/bash
 ################################################################################
-# HP Printer CTF Flag Deployment - Using Original Working Methods
+# Alternative Print Job Flag Deployment
+# Since held jobs aren't persisting, we'll use completed job history
 ################################################################################
 
 PRINTER_IP="192.168.1.131"
 PRINTER_URI="ipp://${PRINTER_IP}:631/ipp/print"
 
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║     HP Printer CTF Flag Deployment                            ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "Testing print job methods..."
 echo ""
 
-# SNMP Flags (Working)
-echo "[1/4] Deploying LUKE flag via SNMP..."
-snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 s "Server-Room-B | FLAG{LUKE47239581}"
-echo ""
+# Method 1: Submit WITHOUT hold parameter and query completed jobs
+echo "[Method 1] Submit job without hold, query completed history..."
 
-echo "[2/4] Deploying LEIA flag via SNMP..."
-snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 s "SecTeam@lab.local | FLAG{LEIA83920174}"
-echo ""
-
-# Print Job Flags (Using original ipptool EOF method)
-echo "[3/4] Deploying PADME and MACE flags via print job..."
-
-# Create document
 cat > /tmp/ctf_document.txt << 'DOCEOF'
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║               CTF CHALLENGE DOCUMENT                           ║
-║               TOP SECRET - AUTHORIZED PERSONNEL ONLY           ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
-
-Document Classification: CONFIDENTIAL
-Security Level: RESTRICTED
-Access Control: NEED-TO-KNOW BASIS
-
-This print job was submitted by a security audit team conducting
-vulnerability assessments of network printing infrastructure.
-
-The job metadata contains additional information that may be of
-interest to penetration testers conducting IoT device enumeration.
+CTF Challenge Document - Security Assessment
 DOCEOF
 
-# Create IPP test file with EOF
-cat > /tmp/submit-job.test << 'EOF'
+cat > /tmp/submit-normal-job.test << 'EOF'
 {
-    NAME "Submit CTF Challenge Job"
+    NAME "Submit Normal Job"
     OPERATION Print-Job
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
@@ -54,7 +27,6 @@ cat > /tmp/submit-job.test << 'EOF'
     ATTR uri printer-uri $uri
     ATTR name requesting-user-name "FLAG{PADME91562837}"
     ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
-    ATTR keyword job-hold-until indefinite
     
     FILE /tmp/ctf_document.txt
     
@@ -62,83 +34,96 @@ cat > /tmp/submit-job.test << 'EOF'
 }
 EOF
 
-# Submit job using ipptool
-ipptool -tv ${PRINTER_URI} /tmp/submit-job.test
-
-# Cleanup
-rm /tmp/ctf_document.txt /tmp/submit-job.test
+ipptool -tv ${PRINTER_URI} /tmp/submit-normal-job.test
 
 echo ""
+echo "Waiting 3 seconds for job to process..."
+sleep 3
 
-# HAN Flag - Manual Configuration
-echo "[4/4] HAN flag - Manual web configuration required:"
+# Query completed jobs
 echo ""
-echo "  1. Open web browser: https://${PRINTER_IP}"
-echo "  2. Navigate to: General → About The Printer → Configure Information → Nickname"
-echo "  3. Set Nickname to: HP-MFP-CTF-FLAG{HAN62947103}"
-echo "  4. Click Apply"
-echo ""
-read -p "Press ENTER when HAN flag is configured..." 
-echo ""
-
-# Verification
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                    VERIFICATION                                ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
-echo ""
-
-echo "SNMP Flags:"
-snmpget -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 | grep FLAG
-snmpget -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 | grep FLAG
-echo ""
-
-echo "IPP Print Jobs:"
-cat > /tmp/check-jobs.test << 'EOF'
+echo "Querying completed jobs:"
+cat > /tmp/get-completed-jobs.test << 'EOF'
 {
-    NAME "Get All Jobs"
+    NAME "Get Completed Jobs"
+    OPERATION Get-Jobs
+    GROUP operation-attributes-tag
+    ATTR charset attributes-charset utf-8
+    ATTR language attributes-natural-language en
+    ATTR uri printer-uri $uri
+    ATTR keyword which-jobs completed
+    ATTR keyword requested-attributes all
+    STATUS successful-ok
+}
+EOF
+
+ipptool -tv ${PRINTER_URI} /tmp/get-completed-jobs.test | grep -E "job-id|job-name|job-originating-user-name|FLAG"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Method 2: Query ALL jobs (not, completed, pending, processing, aborted, canceled)
+echo "[Method 2] Query all job types..."
+
+cat > /tmp/get-all-jobs-types.test << 'EOF'
+{
+    NAME "Get All Job Types"
     OPERATION Get-Jobs
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
     ATTR keyword which-jobs all
-    ATTR keyword requested-attributes all
+    ATTR keyword requested-attributes job-id,job-name,job-originating-user-name,job-state,job-state-reasons
     STATUS successful-ok
 }
 EOF
 
-ipptool -tv ${PRINTER_URI} /tmp/check-jobs.test | grep -E "job-originating-user-name|job-name" | grep FLAG
-rm /tmp/check-jobs.test
+ipptool -tv ${PRINTER_URI} /tmp/get-all-jobs-types.test
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "IPP Printer Attributes:"
-cat > /tmp/check-attrs.test << 'EOF'
+# Method 3: Submit multiple jobs rapidly
+echo "[Method 3] Submitting 3 jobs rapidly..."
+
+for i in {1..3}; do
+    cat > /tmp/submit-job-$i.test << EOF
 {
-    NAME "Get Printer Attributes"
-    OPERATION Get-Printer-Attributes
+    NAME "Submit Job $i"
+    OPERATION Print-Job
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR keyword requested-attributes all
+    ATTR uri printer-uri \$uri
+    ATTR name requesting-user-name "FLAG{PADME91562837}"
+    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}-$i"
+    
+    FILE /tmp/ctf_document.txt
+    
     STATUS successful-ok
 }
 EOF
+    
+    ipptool ${PRINTER_URI} /tmp/submit-job-$i.test &>/dev/null &
+done
 
-ipptool -tv ${PRINTER_URI} /tmp/check-attrs.test | grep -i "printer-info\|printer-name\|printer-location\|printer-contact" | grep FLAG
-rm /tmp/check-attrs.test
+wait
+echo "Jobs submitted, querying immediately..."
+
+ipptool -tv ${PRINTER_URI} /tmp/get-all-jobs-types.test | grep -E "job-id|FLAG"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                  DEPLOYMENT COMPLETE                           ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
-echo ""
-echo "Deployed Flags:"
-echo "  ✓ FLAG{LUKE47239581}  - SNMP sysLocation + IPP printer-location"
-echo "  ✓ FLAG{LEIA83920174}  - SNMP sysContact (SNMP ONLY)"
-echo "  ✓ FLAG{HAN62947103}   - Web config → IPP printer-info/name"
-echo "  ✓ FLAG{PADME91562837} - IPP job-originating-user-name"
-echo "  ✓ FLAG{MACE41927365}  - IPP job-name"
-echo ""
+# Cleanup
+rm /tmp/ctf_document.txt /tmp/submit-*.test /tmp/get-*.test
 
-exit 0
+echo "Summary:"
+echo "  - If completed jobs are kept: Method 1 works"
+echo "  - If no job history: Jobs won't persist"
+echo "  - Alternative: Use PRET filesystem-based flags (permanent)"
+echo ""
