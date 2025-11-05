@@ -98,11 +98,31 @@ echo -e "${GREEN}✅ SNMP is accessible${NC}\n"
 
 # Check IPP access
 echo -e "${BLUE}[4/6]${NC} Testing IPP service..."
-if ! nc -zv ${PRINTER_IP} 631 2>&1 | grep -q "succeeded"; then
-    echo -e "${RED}❌ ERROR: IPP port 631 is not accessible${NC}"
+
+# Try multiple methods to verify IPP is accessible
+IPP_AVAILABLE=false
+
+# Method 1: netcat
+if nc -zv ${PRINTER_IP} 631 2>&1 | grep -qE "succeeded|open|Connected"; then
+    IPP_AVAILABLE=true
+# Method 2: bash TCP
+elif timeout 3 bash -c "echo > /dev/tcp/${PRINTER_IP}/631" 2>/dev/null; then
+    IPP_AVAILABLE=true
+# Method 3: Actually test IPP with a simple query
+elif echo '{NAME "Test" OPERATION Get-Printer-Attributes GROUP operation-attributes-tag ATTR charset attributes-charset utf-8 ATTR uri printer-uri $uri STATUS successful-ok}' | ipptool -t ipp://${PRINTER_IP}:631/ipp/print /dev/stdin &>/dev/null; then
+    IPP_AVAILABLE=true
+fi
+
+if $IPP_AVAILABLE; then
+    echo -e "${GREEN}✅ IPP service is available${NC}\n"
+else
+    echo -e "${RED}❌ ERROR: Cannot connect to IPP service on port 631${NC}"
+    echo -e "${YELLOW}   Troubleshooting:${NC}"
+    echo -e "   - Verify printer IP: ${PRINTER_IP}"
+    echo -e "   - Check if IPP is enabled on printer"
+    echo -e "   - Try: telnet ${PRINTER_IP} 631"
     exit 1
 fi
-echo -e "${GREEN}✅ IPP service is available${NC}\n"
 
 ################################################################################
 # FLAG DEPLOYMENT: SNMP FLAGS
