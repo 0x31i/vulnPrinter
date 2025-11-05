@@ -32,11 +32,11 @@ echo ""
 
 # LUKE flag - visible in both SNMP and IPP
 echo "  → Deploying FLAG{LUKE47239581} via SNMP sysLocation..."
-snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 s "Server-Room-B | FLAG{LUKE47239581}"
+snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 s "OC-Server-Room-B | FLAG{LUKE47239581}"
 
 # LEIA flag - visible ONLY in SNMP (not IPP)
 echo "  → Deploying FLAG{LEIA83920174} via SNMP sysContact..."
-snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 s "SecTeam@lab.local | FLAG{LEIA83920174}"
+snmpset -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 s "OVERCLOCK@OC.local | FLAG{LEIA83920174}"
 
 echo ""
 
@@ -50,7 +50,7 @@ echo ""
 # Create PostScript document with PADME and MACE flags
 cat > "$TMP_DIR/ctf_job_1.ps" << 'EOF'
 %!PS-Adobe-3.0
-%%Title: CTF Challenge Document - Security Assessment
+%%Title: OVERCLOCK Report - Security Assessment
 %%Author: FLAG{PADME91562837}
 %%CreationDate: 2025-11-04
 %%Pages: 1
@@ -64,7 +64,7 @@ newpath
 72 750 moveto
 (╔═══════════════════════════════════════════════════════════╗) show
 72 735 moveto
-(║    CTF CHALLENGE DOCUMENT - SECURITY ASSESSMENT        ║) show
+(║    OVERCLOCK REPORT- SECURITY ASSESSMENT                  ║) show
 72 720 moveto
 (╚═══════════════════════════════════════════════════════════╝) show
 
@@ -73,7 +73,7 @@ newpath
 (Document Classification: CONFIDENTIAL) show
 
 72 660 moveto
-(Job ID: CTF-Challenge-Job-FLAG{MACE41927365}) show
+(Job ID: OVERCLOCK-Job-FLAG{MACE41927365}) show
 
 72 630 moveto
 (Submitted By: FLAG{PADME91562837}) show
@@ -122,7 +122,7 @@ cat > "$TMP_DIR/ctf_job_2.ps" << 'EOF'
 (NETWORK CONFIGURATION REPORT) show
 
 72 720 moveto
-(This document was generated as part of the CTF challenge.) show
+(This document was generated as part of the OC challenge.) show
 
 72 690 moveto
 (Print jobs contain metadata that can be queried via IPP.) show
@@ -194,7 +194,7 @@ echo -e "${BLUE}[3/3]${NC} Manual web configuration required for HAN flag:"
 echo ""
 echo "  URL: https://${PRINTER_IP}"
 echo "  Path: General → About The Printer → Configure Information → Nickname"
-echo "  Value: HP-MFP-CTF-FLAG{HAN62947103}"
+echo "  Value: HP-MFP-FLAG{HAN62947103}"
 echo ""
 read -p "Press ENTER when HAN flag is configured..." 
 echo ""
