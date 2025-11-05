@@ -159,14 +159,14 @@ echo "  → Sending print job 1 (with PADME & MACE flags)..."
 # Method 1: Try lpr if available
 if command -v lpr &>/dev/null; then
     lpr -H "${PRINTER_IP}:9100" -o raw "$TMP_DIR/ctf_job_1.ps" 2>/dev/null && \
-        echo -e "    ${GREEN}✓${NC} Job 1 sent via lpr" || \
-        echo -e "    ${YELLOW}⚠${NC} lpr failed, trying netcat..."
+        echo -e "    ${GREEN}${NC} Job 1 sent via lpr" || \
+        echo -e "    ${YELLOW}${NC} lpr failed, trying netcat..."
 fi
 
 # Method 2: Netcat with timeout (fallback)
 (timeout 3 cat "$TMP_DIR/ctf_job_1.ps" | nc -w 2 ${PRINTER_IP} 9100 2>/dev/null) && \
-    echo -e "    ${GREEN}✓${NC} Job 1 sent via netcat" || \
-    echo -e "    ${RED}✗${NC} Job 1 failed"
+    echo -e "    ${GREEN}${NC} Job 1 sent via netcat" || \
+    echo -e "    ${RED}${NC} Job 1 failed"
 
 sleep 1
 
@@ -176,8 +176,8 @@ echo "  → Sending additional print jobs..."
 for i in 2 3; do
     if [ -f "$TMP_DIR/ctf_job_${i}.ps" ]; then
         (timeout 3 cat "$TMP_DIR/ctf_job_${i}.ps" | nc -w 2 ${PRINTER_IP} 9100 2>/dev/null) && \
-            echo -e "    ${GREEN}✓${NC} Job ${i} sent" || \
-            echo -e "    ${YELLOW}⚠${NC} Job ${i} may have failed"
+            echo -e "    ${GREEN}${NC} Job ${i} sent" || \
+            echo -e "    ${YELLOW}${NC} Job ${i} may have failed"
         sleep 1
     fi
 done
@@ -234,7 +234,7 @@ EOF
 echo "  Checking not-completed (upcoming) jobs:"
 if ipptool -tv ${PRINTER_URI} "$TMP_DIR/check-all-jobs.test" 2>/dev/null | grep -E "job-originating-user-name|job-name" | grep -q FLAG; then
     ipptool -tv ${PRINTER_URI} "$TMP_DIR/check-all-jobs.test" 2>/dev/null | grep -E "job-originating-user-name|job-name" | grep FLAG
-    echo -e "  ${GREEN}✓${NC} Flags found in upcoming jobs!"
+    echo -e "  ${GREEN}${NC} Flags found in upcoming jobs!"
 else
     echo "  Checking completed jobs (history):"
     
@@ -291,11 +291,11 @@ echo "║                  DEPLOYMENT COMPLETE                           ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Deployed Flags:"
-echo "  ✓ FLAG{LUKE47239581}  - SNMP sysLocation + IPP printer-location"
-echo "  ✓ FLAG{LEIA83920174}  - SNMP sysContact (SNMP ONLY)"
-echo "  ✓ FLAG{HAN62947103}   - Web Interface → IPP printer-info"
-echo "  ✓ FLAG{PADME91562837} - Print job %%Author attribute"
-echo "  ✓ FLAG{MACE41927365}  - Print job %%Title / job-name"
+echo "  • FLAG{LUKE47239581}  - SNMP sysLocation + IPP printer-location"
+echo "  • FLAG{LEIA83920174}  - SNMP sysContact (SNMP ONLY)"
+echo "  • FLAG{HAN62947103}   - Web Interface → IPP printer-info"
+echo "  • FLAG{PADME91562837} - Print job %%Author attribute"
+echo "  • FLAG{MACE41927365}  - Print job %%Title / job-name"
 echo ""
 echo "Print Jobs Created:"
 echo "  • 3 PostScript documents submitted"
