@@ -1,310 +1,293 @@
 #!/bin/bash
-###############################################################################
-# HP MFP 4301 CTF - FINAL Clean Deployment
-# Description: SNMP + IPP deployment with realistic cover traffic
-# Platform: Kali Linux (or any Debian-based system)
-# Usage: sudo ./deploy_ctf_CLEAN.sh <PRINTER_IP> [SNMP_COMMUNITY]
-###############################################################################
+################################################################################
+# HP Color LaserJet Pro MFP 4301 CTF Flag Deployment Script
+# 
+# This script deploys multiple flags across different protocols to teach
+# students that comprehensive enumeration requires multiple tools.
+#
+# Flag Distribution:
+#   - FLAG{LUKE47239581}  : SNMP sysLocation → Shows in IPP printer-location
+#   - FLAG{LEIA83920174}  : SNMP sysContact  → Shows in SNMP ONLY (not IPP)
+#   - FLAG{HAN62947103}   : Manual web setup → Shows in IPP printer-info
+#   - FLAG{PADME91562837} : IPP print job    → Shows in IPP job metadata
+#   - FLAG{MACE41927365}  : IPP job name     → Shows in IPP job metadata
+#
+# Pedagogical Value:
+#   Students learn that IPP alone is insufficient - they must use SNMP
+#   enumeration tools (snmpwalk, snmp_enum, etc.) to find all flags.
+#
+################################################################################
 
 set -e
 
-PRINTER_IP="${1:-192.168.1.131}"
-SNMP_COMMUNITY="${2:-private}"  # Default write community
-TMP_DIR="/tmp/ctf_printer_clean_$$"
-LOG_FILE="/tmp/ctf_deployment_clean_$(date +%Y%m%d_%H%M%S).log"
+# Configuration
+PRINTER_IP="192.168.1.131"
+PRINTER_URI="ipp://${PRINTER_IP}:631/ipp/print"
+SNMP_COMMUNITY="public"
 
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-PURPLE='\033[0;35m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-clear
-echo -e "${CYAN}"
+# Banner
+echo -e "${BLUE}"
 cat << "EOF"
-╔═══════════════════════════════════════════════════════════════════════════╗
-║                                                                           ║
-║          HP MFP 4301 CTF - Clean Final Deployment                        ║
-║          SNMP Flags + IPP PADME Flag + Cover Jobs                        ║
-║                                                                           ║
-╚═══════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║     HP Printer CTF Flag Deployment Script                     ║
+║     Multi-Protocol Enumeration Challenge                      ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
 
-# Logging functions
-log() { echo -e "${GREEN}[$(date +'%H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"; }
-error() { echo -e "${RED}[ERROR]${NC} $1" | tee -a "$LOG_FILE"; }
-warning() { echo -e "${YELLOW}[WARNING]${NC} $1" | tee -a "$LOG_FILE"; }
-info() { echo -e "${BLUE}[INFO]${NC} $1" | tee -a "$LOG_FILE"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $1" | tee -a "$LOG_FILE"; }
-header() { echo -e "\n${PURPLE}═══ $1 ═══${NC}" | tee -a "$LOG_FILE"; }
+################################################################################
+# PRE-FLIGHT CHECKS
+################################################################################
 
-log "Starting CTF deployment for printer: $PRINTER_IP"
-mkdir -p "$TMP_DIR"
-cd "$TMP_DIR"
+echo -e "${YELLOW}[PREFLIGHT]${NC} Running pre-deployment checks...\n"
 
-# Check for required tools
-check_tools() {
-    local missing_tools=()
-    
-    if ! command -v ipptool &>/dev/null; then
-        missing_tools+=("ipptool (cups-ipp-utils)")
-    fi
-    
-    if ! command -v snmpset &>/dev/null; then
-        warning "snmpset not installed - will skip SNMP deployment"
-        warning "Install with: sudo apt install snmp"
-    fi
-    
-    if [ ${#missing_tools[@]} -gt 0 ]; then
-        error "Missing required tools: ${missing_tools[*]}"
-        exit 1
-    fi
-}
+# Check if running as root (needed for some SNMP operations)
+if [[ $EUID -eq 0 ]]; then
+   echo -e "${YELLOW}⚠️  Running as root${NC}"
+fi
 
-# Deploy printer attribute flags via SNMP
-deploy_snmp_flags() {
-    header "Deploying Printer Attribute Flags via SNMP"
-    
-    if ! command -v snmpset &>/dev/null; then
-        warning "Skipping SNMP deployment - snmpset not available"
-        echo ""
-        warning "MANUAL CONFIGURATION REQUIRED:"
-        echo "  1. Access: https://$PRINTER_IP"
-        echo "  2. Navigate to: Network → Identification"
-        echo "  3. Set:"
-        echo "     System Location: Server-Room-B | Discovery Code: FLAG{LUKE47239581}"
-        echo "     System Contact: SecTeam@lab.local | FLAG{LEIA83920174}"
-        echo "     System Name: HP-MFP-CTF-FLAG{HAN62947103}"
-        return
-    fi
-    
-    # FLAG 1: System Location (LUKE)
-    info "FLAG 1: Setting printer-location (sysLocation)..."
-    if snmpset -v2c -c "$SNMP_COMMUNITY" "$PRINTER_IP" \
-        1.3.6.1.2.1.1.6.0 s "Server-Room-B | Discovery Code: FLAG{LUKE47239581}" \
-        &>>"$LOG_FILE"; then
-        success "✓ FLAG{LUKE47239581} deployed in printer-location"
-    else
-        error "✗ SNMP write failed for location"
-        warning "  Try: Community string may not have write access"
-        warning "  Solution: Configure manually via web interface"
-    fi
-    
-    # FLAG 2: System Contact (LEIA)
-    info "FLAG 2: Setting printer-contact (sysContact)..."
-    if snmpset -v2c -c "$SNMP_COMMUNITY" "$PRINTER_IP" \
-        1.3.6.1.2.1.1.4.0 s "SecTeam@lab.local | FLAG{LEIA83920174}" \
-        &>>"$LOG_FILE"; then
-        success "✓ FLAG{LEIA83920174} deployed in printer-contact"
-    else
-        error "✗ SNMP write failed for contact"
-    fi
-    
-    # FLAG 3: System Name (HAN)
-    info "FLAG 3: Setting printer-info (sysName)..."
-    if snmpset -v2c -c "$SNMP_COMMUNITY" "$PRINTER_IP" \
-        1.3.6.1.2.1.1.5.0 s "HP-MFP-CTF-FLAG{HAN62947103}" \
-        &>>"$LOG_FILE"; then
-        success "✓ FLAG{HAN62947103} deployed in printer-info"
-    else
-        error "✗ SNMP write failed for name"
-    fi
-    
-    echo ""
-    info "Verifying SNMP flags..."
-    sleep 2
-    
-    # Verify with snmpget
-    local location=$(snmpget -v2c -c public "$PRINTER_IP" 1.3.6.1.2.1.1.6.0 2>/dev/null | grep -oP 'FLAG\{[^}]+\}' || echo "NOT_SET")
-    local contact=$(snmpget -v2c -c public "$PRINTER_IP" 1.3.6.1.2.1.1.4.0 2>/dev/null | grep -oP 'FLAG\{[^}]+\}' || echo "NOT_SET")
-    local name=$(snmpget -v2c -c public "$PRINTER_IP" 1.3.6.1.2.1.1.5.0 2>/dev/null | grep -oP 'FLAG\{[^}]+\}' || echo "NOT_SET")
-    
-    if [ "$location" != "NOT_SET" ]; then
-        success "  ✓ Location flag verified: $location"
-    else
-        error "  ✗ Location flag NOT set"
-    fi
-    
-    if [ "$contact" != "NOT_SET" ]; then
-        success "  ✓ Contact flag verified: $contact"
-    else
-        error "  ✗ Contact flag NOT set"
-    fi
-    
-    if [ "$name" != "NOT_SET" ]; then
-        success "  ✓ Name flag verified: $name"
-    else
-        error "  ✗ Name flag NOT set"
-    fi
-}
+# Check printer connectivity
+echo -e "${BLUE}[1/6]${NC} Testing printer connectivity..."
+if ! ping -c 2 -W 2 ${PRINTER_IP} &>/dev/null; then
+    echo -e "${RED}❌ ERROR: Cannot reach printer at ${PRINTER_IP}${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Printer is reachable${NC}\n"
 
-# Deploy PADME flag in IPP job
-deploy_ipp_flag() {
-    header "Deploying IPP Job Flag (PADME)"
-    
-    local doc_file="$TMP_DIR/network_config.txt"
-    cat > "$doc_file" << 'EOF'
-════════════════════════════════════════════════════════════════
-NETWORK CONFIGURATION BACKUP REPORT
-════════════════════════════════════════════════════════════════
+# Check required tools
+echo -e "${BLUE}[2/6]${NC} Checking required tools..."
+MISSING_TOOLS=()
 
-Generated: November 2025
-Classification: Internal Use Only
+if ! command -v snmpset &>/dev/null; then
+    MISSING_TOOLS+=("snmp (install: apt install snmp)")
+fi
 
-This automated backup job contains network configuration data.
-The job metadata includes the requesting user's authentication token.
+if ! command -v ipptool &>/dev/null; then
+    MISSING_TOOLS+=("ipptool (install: apt install cups-ipp-utils)")
+fi
 
-To enumerate job metadata:
-1. Use IPP Get-Jobs operation
-2. Query job-originating-user-name attribute
-3. Look for authentication tokens in the username field
+if ! command -v nc &>/dev/null; then
+    MISSING_TOOLS+=("netcat (install: apt install netcat)")
+fi
 
-════════════════════════════════════════════════════════════════
-EOF
-    
-    local test_file="$TMP_DIR/padme_job.test"
-    cat > "$test_file" <<TESTEOF
-{
-    NAME "PADME IPP Job"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR name requesting-user-name "FLAG{PADME91562837}"
-    ATTR name job-name "Network-Config-Backup"
-    
-    FILE $doc_file
-    
-    STATUS successful-ok
-}
-TESTEOF
-    
-    info "Submitting PADME flag job (FLAG{PADME91562837})..."
-    
-    # Submit 3 copies for persistence
-    for i in 1 2 3; do
-        info "  Copy $i/3..."
-        timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$test_file" &>>"$LOG_FILE" || true
-        sleep 2
+if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
+    echo -e "${RED}❌ Missing required tools:${NC}"
+    for tool in "${MISSING_TOOLS[@]}"; do
+        echo -e "   - $tool"
     done
-    
-    success "PADME flag jobs submitted"
-}
+    exit 1
+fi
+echo -e "${GREEN}✅ All required tools installed${NC}\n"
 
-# Submit realistic cover jobs (no flags)
-deploy_cover_jobs() {
-    header "Deploying Realistic Cover Jobs"
-    
-    # Cover job 1: Confidential report
-    info "Submitting cover job 1: Confidential Report..."
-    cat > "$TMP_DIR/confidential.txt" << 'EOF'
-CONFIDENTIAL - QUARTERLY SECURITY ASSESSMENT
-Date: Q4 2025
-For: Security Team
+# Check SNMP access
+echo -e "${BLUE}[3/6]${NC} Testing SNMP access..."
+if ! snmpget -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.1.0 &>/dev/null; then
+    echo -e "${RED}❌ ERROR: SNMP not accessible (check community string)${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ SNMP is accessible${NC}\n"
 
-Executive Summary:
-This report contains findings from the quarterly security assessment.
+# Check IPP access
+echo -e "${BLUE}[4/6]${NC} Testing IPP service..."
+if ! nc -zv ${PRINTER_IP} 631 2>&1 | grep -q "succeeded"; then
+    echo -e "${RED}❌ ERROR: IPP port 631 is not accessible${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ IPP service is available${NC}\n"
+
+################################################################################
+# FLAG DEPLOYMENT: SNMP FLAGS
+################################################################################
+
+echo -e "${YELLOW}[DEPLOYMENT]${NC} Deploying SNMP-based flags...\n"
+
+# Deploy LUKE flag via SNMP sysLocation
+echo -e "${BLUE}[5/6]${NC} Deploying FLAG{LUKE47239581} via SNMP sysLocation..."
+
+LUKE_VALUE="Server-Room-B | Discovery Code: FLAG{LUKE47239581}"
+if snmpset -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 s "${LUKE_VALUE}" &>/dev/null; then
+    # Verify it was set
+    LUKE_CHECK=$(snmpget -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 2>/dev/null | grep -o 'FLAG{LUKE47239581}')
+    if [[ "$LUKE_CHECK" == "FLAG{LUKE47239581}" ]]; then
+        echo -e "${GREEN}✅ LUKE flag deployed successfully${NC}"
+        echo -e "   ${BLUE}→ Protocol:${NC} SNMP OID 1.3.6.1.2.1.1.6.0 (sysLocation)"
+        echo -e "   ${BLUE}→ Visibility:${NC} Both SNMP AND IPP (printer-location)"
+    else
+        echo -e "${YELLOW}⚠️  LUKE flag set but verification failed${NC}"
+    fi
+else
+    echo -e "${RED}❌ Failed to set LUKE flag via SNMP${NC}"
+fi
+echo ""
+
+# Deploy LEIA flag via SNMP sysContact
+echo -e "${BLUE}[6/6]${NC} Deploying FLAG{LEIA83920174} via SNMP sysContact..."
+
+LEIA_VALUE="SecTeam@lab.local | FLAG{LEIA83920174}"
+if snmpset -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 s "${LEIA_VALUE}" &>/dev/null; then
+    # Verify it was set
+    LEIA_CHECK=$(snmpget -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 2>/dev/null | grep -o 'FLAG{LEIA83920174}')
+    if [[ "$LEIA_CHECK" == "FLAG{LEIA83920174}" ]]; then
+        echo -e "${GREEN}✅ LEIA flag deployed successfully${NC}"
+        echo -e "   ${BLUE}→ Protocol:${NC} SNMP OID 1.3.6.1.2.1.1.4.0 (sysContact)"
+        echo -e "   ${BLUE}→ Visibility:${NC} SNMP ONLY (not visible in IPP!)"
+        echo -e "   ${YELLOW}→ Teaching Point:${NC} Students must use SNMP enumeration"
+    else
+        echo -e "${YELLOW}⚠️  LEIA flag set but verification failed${NC}"
+    fi
+else
+    echo -e "${RED}❌ Failed to set LEIA flag via SNMP${NC}"
+fi
+echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+
+################################################################################
+# FLAG DEPLOYMENT: IPP PRINT JOB FLAGS
+################################################################################
+
+echo -e "${YELLOW}[DEPLOYMENT]${NC} Deploying IPP print job flags...\n"
+
+# Create the print job document
+cat > /tmp/ctf_challenge_document.txt << 'EOF'
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║               CTF CHALLENGE DOCUMENT                           ║
+║               TOP SECRET - AUTHORIZED PERSONNEL ONLY           ║
+║                                                                ║
+╠════════════════════════════════════════════════════════════════╣
+║                                                                ║
+║  This document is part of a multi-protocol enumeration         ║
+║  challenge. Flags are hidden across multiple discovery         ║
+║  methods:                                                      ║
+║                                                                ║
+║  • SNMP enumeration (snmpwalk, snmp_enum module)              ║
+║  • IPP printer attributes (ipptool)                            ║
+║  • IPP print job metadata (ipptool Get-Jobs)                   ║
+║  • PJL filesystem access (PRET toolkit)                        ║
+║                                                                ║
+║  HINT: One protocol alone is insufficient. You must combine    ║
+║        multiple enumeration techniques to find all flags.      ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+Document Classification: CONFIDENTIAL
+Security Level: RESTRICTED
+Access Control: NEED-TO-KNOW BASIS
+
+This print job was submitted by a security audit team conducting
+vulnerability assessments of network printing infrastructure.
+
+The job metadata contains additional information that may be of
+interest to penetration testers conducting IoT device enumeration.
 EOF
-    
-    cat > "$TMP_DIR/confidential.test" <<'TESTEOF'
+
+echo -e "${BLUE}[1/2]${NC} Creating IPP test file for job submission..."
+
+# Create IPP test file for job submission
+cat > /tmp/submit-ctf-job.test << 'EOF'
 {
-    NAME "Cover Job 1"
+    NAME "Submit CTF Challenge Print Job"
     OPERATION Print-Job
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "security-team"
-    ATTR name job-name "Confidential-Security-Report"
-    FILE DOCFILE
+    ATTR name requesting-user-name "FLAG{PADME91562837}"
+    ATTR name job-name "CTF-Challenge-Job-FLAG{MACE41927365}"
+    ATTR keyword job-hold-until indefinite
+    
+    FILE /tmp/ctf_challenge_document.txt
+    
     STATUS successful-ok
 }
-TESTEOF
-    sed -i "s|DOCFILE|$TMP_DIR/confidential.txt|g" "$TMP_DIR/confidential.test"
-    timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/confidential.test" &>>"$LOG_FILE" || true
-    success "  ✓ Confidential Report job submitted"
-    sleep 2
-    
-    # Cover job 2: Technical documentation
-    info "Submitting cover job 2: Technical Documentation..."
-    cat > "$TMP_DIR/technical.txt" << 'EOF'
-TECHNICAL DOCUMENTATION UPDATE
-Version: 2.1
-Author: Engineering Team
-
-This document contains updated technical specifications
-for the network infrastructure deployment.
 EOF
-    
-    cat > "$TMP_DIR/technical.test" <<'TESTEOF'
-{
-    NAME "Cover Job 2"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "engineering"
-    ATTR name job-name "Technical-Documentation"
-    FILE DOCFILE
-    STATUS successful-ok
-}
-TESTEOF
-    sed -i "s|DOCFILE|$TMP_DIR/technical.txt|g" "$TMP_DIR/technical.test"
-    timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/technical.test" &>>"$LOG_FILE" || true
-    success "  ✓ Technical Documentation job submitted"
-    sleep 2
-    
-    # Cover job 3: Meeting agenda
-    info "Submitting cover job 3: Meeting Agenda..."
-    cat > "$TMP_DIR/meeting.txt" << 'EOF'
-WEEKLY OPERATIONS MEETING
-Date: Monday, November 4, 2025
-Time: 10:00 AM
 
-Agenda:
-1. Review action items from previous meeting
-2. Discuss ongoing projects
-3. Address any concerns or blockers
-EOF
-    
-    cat > "$TMP_DIR/meeting.test" <<'TESTEOF'
-{
-    NAME "Cover Job 3"
-    OPERATION Print-Job
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri $uri
-    ATTR name requesting-user-name "operations"
-    ATTR name job-name "Meeting-Agenda"
-    FILE DOCFILE
-    STATUS successful-ok
-}
-TESTEOF
-    sed -i "s|DOCFILE|$TMP_DIR/meeting.txt|g" "$TMP_DIR/meeting.test"
-    timeout 10 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/meeting.test" &>>"$LOG_FILE" || true
-    success "  ✓ Meeting Agenda job submitted"
-    
-    success "All cover jobs submitted"
-}
+echo -e "${BLUE}[2/2]${NC} Submitting print job with PADME and MACE flags..."
 
-# Verify deployment
-verify_deployment() {
-    header "Verifying Deployment"
-    
-    info "Waiting 5 seconds for jobs to register..."
-    sleep 5
-    
-    # Test IPP Get-Printer-Attributes
-    cat > "$TMP_DIR/verify_printer.test" << 'EOF'
+# Submit the job
+if ipptool -tv ${PRINTER_URI} /tmp/submit-ctf-job.test &>/dev/null; then
+    echo -e "${GREEN}✅ Print job submitted successfully${NC}"
+    echo -e "   ${BLUE}→ Job User:${NC} FLAG{PADME91562837}"
+    echo -e "   ${BLUE}→ Job Name:${NC} CTF-Challenge-Job-FLAG{MACE41927365}"
+    echo -e "   ${BLUE}→ Job State:${NC} Held (indefinite)"
+    echo -e "   ${BLUE}→ Discovery:${NC} ipptool Get-Jobs operation"
+else
+    echo -e "${RED}❌ Failed to submit print job${NC}"
+fi
+
+# Cleanup temporary files
+rm -f /tmp/ctf_challenge_document.txt /tmp/submit-ctf-job.test
+
+echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+
+################################################################################
+# MANUAL CONFIGURATION REMINDER
+################################################################################
+
+echo -e "${YELLOW}[MANUAL SETUP REQUIRED]${NC} Web Interface Configuration\n"
+
+echo -e "${BLUE}FLAG{HAN62947103}${NC} must be configured manually:"
+echo -e ""
+echo -e "  ${YELLOW}1.${NC} Open web browser and navigate to:"
+echo -e "     ${BLUE}https://${PRINTER_IP}${NC}"
+echo -e ""
+echo -e "  ${YELLOW}2.${NC} Login with administrator credentials"
+echo -e ""
+echo -e "  ${YELLOW}3.${NC} Navigate to: ${BLUE}Settings → Network → General${NC}"
+echo -e ""
+echo -e "  ${YELLOW}4.${NC} Set the following value:"
+echo -e "     ${GREEN}Device Name:${NC} HP-MFP-CTF-FLAG{HAN62947103}"
+echo -e ""
+echo -e "  ${YELLOW}5.${NC} Click ${GREEN}Apply${NC} to save changes"
+echo -e ""
+echo -e "${YELLOW}⚠️  This flag appears ONLY in IPP printer-info attribute${NC}"
+echo -e ""
+
+read -p "Press ENTER once manual configuration is complete..." -r
+echo ""
+
+################################################################################
+# VERIFICATION
+################################################################################
+
+echo -e "${YELLOW}[VERIFICATION]${NC} Checking deployed flags...\n"
+
+# Verify SNMP flags
+echo -e "${BLUE}SNMP Enumeration Results:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+SNMP_LOCATION=$(snmpget -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.6.0 2>/dev/null | cut -d '"' -f 2)
+SNMP_CONTACT=$(snmpget -v2c -c ${SNMP_COMMUNITY} ${PRINTER_IP} 1.3.6.1.2.1.1.4.0 2>/dev/null | cut -d '"' -f 2)
+
+if [[ "$SNMP_LOCATION" == *"LUKE47239581"* ]]; then
+    echo -e "${GREEN}✅ sysLocation (1.3.6.1.2.1.1.6.0):${NC}"
+    echo -e "   $SNMP_LOCATION"
+else
+    echo -e "${RED}❌ LUKE flag not found in SNMP sysLocation${NC}"
+fi
+
+if [[ "$SNMP_CONTACT" == *"LEIA83920174"* ]]; then
+    echo -e "${GREEN}✅ sysContact (1.3.6.1.2.1.1.4.0):${NC}"
+    echo -e "   $SNMP_CONTACT"
+else
+    echo -e "${RED}❌ LEIA flag not found in SNMP sysContact${NC}"
+fi
+
+echo -e "\n${BLUE}IPP Printer Attributes:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Create test file for printer attributes
+cat > /tmp/get-printer-attributes.test << 'EOF'
 {
-    NAME "Verify Printer Attributes"
+    NAME "Get Printer Attributes"
     OPERATION Get-Printer-Attributes
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
@@ -314,194 +297,123 @@ verify_deployment() {
     STATUS successful-ok
 }
 EOF
-    
-    info "Checking printer attributes..."
-    local printer_output="$TMP_DIR/printer_attrs.txt"
-    timeout 15 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify_printer.test" > "$printer_output" 2>&1 || true
-    
-    echo ""
-    info "Printer Attribute Flags:"
-    if grep -q "FLAG{LUKE47239581}" "$printer_output"; then
-        success "  ✓ FLAG{LUKE47239581} (printer-location)"
-    else
-        error "  ✗ FLAG{LUKE47239581} NOT FOUND"
-    fi
-    
-    if grep -q "FLAG{LEIA83920174}" "$printer_output"; then
-        success "  ✓ FLAG{LEIA83920174} (printer-contact)"
-    else
-        error "  ✗ FLAG{LEIA83920174} NOT FOUND"
-    fi
-    
-    if grep -q "FLAG{HAN62947103}" "$printer_output"; then
-        success "  ✓ FLAG{HAN62947103} (printer-info)"
-    else
-        error "  ✗ FLAG{HAN62947103} NOT FOUND"
-    fi
-    
-    # Test IPP Get-Jobs
-    cat > "$TMP_DIR/verify_jobs.test" << 'EOF'
+
+IPP_ATTRS=$(ipptool -tv ${PRINTER_URI} /tmp/get-printer-attributes.test 2>/dev/null)
+
+if echo "$IPP_ATTRS" | grep -q "LUKE47239581"; then
+    echo -e "${GREEN}✅ printer-location:${NC}"
+    echo "$IPP_ATTRS" | grep "printer-location" | sed 's/^/   /'
+else
+    echo -e "${RED}❌ LUKE flag not found in IPP printer-location${NC}"
+fi
+
+if echo "$IPP_ATTRS" | grep -q "LEIA83920174"; then
+    echo -e "${GREEN}✅ printer-contact:${NC}"
+    echo "$IPP_ATTRS" | grep "printer-contact" | sed 's/^/   /'
+    echo -e "${YELLOW}   ⚠️  UNEXPECTED: LEIA should only be in SNMP!${NC}"
+else
+    echo -e "${YELLOW}⚠️  printer-contact:${NC} LEIA flag not visible (expected)"
+    echo -e "   ${BLUE}→ Students must use SNMP enumeration${NC}"
+fi
+
+if echo "$IPP_ATTRS" | grep -q "HAN62947103"; then
+    echo -e "${GREEN}✅ printer-info:${NC}"
+    echo "$IPP_ATTRS" | grep "printer-info" | sed 's/^/   /'
+else
+    echo -e "${RED}❌ HAN flag not found in IPP printer-info${NC}"
+    echo -e "   ${YELLOW}→ Complete manual configuration via web interface${NC}"
+fi
+
+rm -f /tmp/get-printer-attributes.test
+
+echo -e "\n${BLUE}IPP Print Jobs:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Create test file for jobs
+cat > /tmp/get-jobs.test << 'EOF'
 {
-    NAME "Verify Jobs"
+    NAME "Get All Print Jobs"
     OPERATION Get-Jobs
     GROUP operation-attributes-tag
     ATTR charset attributes-charset utf-8
     ATTR language attributes-natural-language en
     ATTR uri printer-uri $uri
-    ATTR keyword which-jobs all
     ATTR keyword requested-attributes all
+    ATTR keyword which-jobs all
     STATUS successful-ok
 }
 EOF
-    
-    info "Checking print jobs..."
-    local jobs_output="$TMP_DIR/jobs.txt"
-    timeout 15 ipptool -tv "ipp://$PRINTER_IP:631/ipp/print" "$TMP_DIR/verify_jobs.test" > "$jobs_output" 2>&1 || true
-    
-    echo ""
-    info "IPP Job Flag:"
-    if grep -q "FLAG{PADME91562837}" "$jobs_output"; then
-        success "  ✓ FLAG{PADME91562837} (job-originating-user-name)"
-        local count=$(grep -c "FLAG{PADME91562837}" "$jobs_output" || echo 0)
-        info "    Found in $count job(s)"
-    else
-        error "  ✗ FLAG{PADME91562837} NOT FOUND"
-        warning "    Jobs may have processed already - re-run script if needed"
-    fi
-}
 
-# Create student guide
-create_student_guide() {
-    cat > "$TMP_DIR/STUDENT_GUIDE.txt" << EOF
-════════════════════════════════════════════════════════════════
-    HP MFP 4301 CTF - Student Discovery Guide
-════════════════════════════════════════════════════════════════
+IPP_JOBS=$(ipptool -tv ${PRINTER_URI} /tmp/get-jobs.test 2>/dev/null)
 
-TARGET: $PRINTER_IP
-PROTOCOLS: IPP (631), SNMP (161)
+if echo "$IPP_JOBS" | grep -q "PADME91562837"; then
+    echo -e "${GREEN}✅ job-originating-user-name:${NC}"
+    echo "$IPP_JOBS" | grep "job-originating-user-name" | grep "PADME" | sed 's/^/   /'
+else
+    echo -e "${RED}❌ PADME flag not found in print jobs${NC}"
+fi
 
-TOTAL FLAGS: 4
+if echo "$IPP_JOBS" | grep -q "MACE41927365"; then
+    echo -e "${GREEN}✅ job-name:${NC}"
+    echo "$IPP_JOBS" | grep "job-name" | grep "MACE" | sed 's/^/   /'
+else
+    echo -e "${RED}❌ MACE flag not found in print jobs${NC}"
+fi
 
-────────────────────────────────────────────────────────────────
-FLAG 1-3: Printer Attributes (IPP/SNMP)
-────────────────────────────────────────────────────────────────
+rm -f /tmp/get-jobs.test
 
-Discovery Method 1: IPP Get-Printer-Attributes
------------------------------------------------
-1. Create get-printer-attributes.test:
+################################################################################
+# DEPLOYMENT SUMMARY
+################################################################################
 
-{
-    NAME "Get Printer Attributes"
-    OPERATION Get-Printer-Attributes
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR keyword requested-attributes all
-    STATUS successful-ok
-}
+echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-2. Run: ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-printer-attributes.test
+echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║                   DEPLOYMENT COMPLETE                          ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo -e ""
 
-3. Search output for:
-   - printer-location → FLAG{LUKE47239581}
-   - printer-contact → FLAG{LEIA83920174}
-   - printer-info → FLAG{HAN62947103}
+echo -e "${BLUE}Deployed Flags Summary:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e ""
+echo -e "  ${GREEN}✓${NC} FLAG{LUKE47239581}    ${BLUE}→${NC} SNMP sysLocation + IPP printer-location"
+echo -e "  ${GREEN}✓${NC} FLAG{LEIA83920174}    ${BLUE}→${NC} SNMP sysContact (NOT in IPP)"
+echo -e "  ${YELLOW}?${NC} FLAG{HAN62947103}     ${BLUE}→${NC} Manual web config → IPP printer-info"
+echo -e "  ${GREEN}✓${NC} FLAG{PADME91562837}   ${BLUE}→${NC} IPP job-originating-user-name"
+echo -e "  ${GREEN}✓${NC} FLAG{MACE41927365}    ${BLUE}→${NC} IPP job-name"
+echo -e ""
 
-Discovery Method 2: SNMP Enumeration
-------------------------------------
-snmpwalk -v2c -c public $PRINTER_IP 1.3.6.1.2.1.1
+echo -e "${BLUE}Student Discovery Commands:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e ""
+echo -e "${YELLOW}# SNMP Enumeration (LUKE + LEIA flags)${NC}"
+echo -e "snmpwalk -v2c -c public ${PRINTER_IP} 1.3.6.1.2.1.1"
+echo -e "msfconsole -q -x 'use auxiliary/scanner/snmp/snmp_enum; set RHOSTS ${PRINTER_IP}; run; exit'"
+echo -e ""
+echo -e "${YELLOW}# IPP Printer Attributes (LUKE + HAN flags)${NC}"
+echo -e "ipptool -tv ipp://${PRINTER_IP}:631/ipp/print get-printer-attributes.test | grep FLAG"
+echo -e ""
+echo -e "${YELLOW}# IPP Print Jobs (PADME + MACE flags)${NC}"
+echo -e "ipptool -tv ipp://${PRINTER_IP}:631/ipp/print get-jobs.test | grep FLAG"
+echo -e ""
 
-Or specific queries:
-snmpget -v2c -c public $PRINTER_IP 1.3.6.1.2.1.1.6.0  # Location
-snmpget -v2c -c public $PRINTER_IP 1.3.6.1.2.1.1.4.0  # Contact
-snmpget -v2c -c public $PRINTER_IP 1.3.6.1.2.1.1.5.0  # Name
+echo -e "${BLUE}Teaching Points:${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e ""
+echo -e "  ${YELLOW}1.${NC} SNMP and IPP are different protocols with different visibility"
+echo -e "  ${YELLOW}2.${NC} LEIA flag demonstrates SNMP-only information disclosure"
+echo -e "  ${YELLOW}3.${NC} Students must use BOTH protocols for complete enumeration"
+echo -e "  ${YELLOW}4.${NC} Print jobs require separate IPP operation (Get-Jobs)"
+echo -e "  ${YELLOW}5.${NC} Comprehensive IoT assessment requires multi-protocol approach"
+echo -e ""
 
-────────────────────────────────────────────────────────────────
-FLAG 4: Print Job Metadata (IPP)
-────────────────────────────────────────────────────────────────
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-1. Create get-jobs.test:
+echo -e "${BLUE}Next Steps:${NC}"
+echo -e "  1. Complete manual HAN flag configuration if not done"
+echo -e "  2. Test student discovery paths with provided commands"
+echo -e "  3. Deploy PRET-based flags for filesystem enumeration"
+echo -e "  4. Create student guide with progressive hints"
+echo -e ""
 
-{
-    NAME "Get Print Jobs"
-    OPERATION Get-Jobs
-    GROUP operation-attributes-tag
-    ATTR charset attributes-charset utf-8
-    ATTR language attributes-natural-language en
-    ATTR uri printer-uri \$uri
-    ATTR keyword which-jobs all
-    ATTR keyword requested-attributes all
-    STATUS successful-ok
-}
-
-2. Run: ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test
-
-3. Search for job-originating-user-name attribute:
-   - Look for job: "Network-Config-Backup"
-   - Find FLAG{PADME91562837}
-
-Quick Search:
-ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG
-
-════════════════════════════════════════════════════════════════
-LEARNING OBJECTIVES:
-────────────────────────────────────────────────────────────────
-- IPP protocol enumeration
-- SNMP device enumeration
-- Print job metadata analysis
-- Multi-protocol information gathering
-
-════════════════════════════════════════════════════════════════
-EOF
-    
-    success "Student guide created: $TMP_DIR/STUDENT_GUIDE.txt"
-}
-
-# Main execution
-main() {
-    check_tools
-    echo ""
-    deploy_snmp_flags
-    echo ""
-    deploy_ipp_flag
-    echo ""
-    deploy_cover_jobs
-    echo ""
-    verify_deployment
-    echo ""
-    create_student_guide
-    
-    echo ""
-    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                   DEPLOYMENT COMPLETE                                     ║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    
-    echo -e "${CYAN}Deployed Flags:${NC}"
-    echo "  FLAG{LUKE47239581}   - printer-location (SNMP sysLocation)"
-    echo "  FLAG{LEIA83920174}   - printer-contact (SNMP sysContact)"
-    echo "  FLAG{HAN62947103}    - printer-info (SNMP sysName)"
-    echo "  FLAG{PADME91562837}  - job-originating-user-name (IPP job)"
-    echo ""
-    
-    echo -e "${YELLOW}Files Created:${NC}"
-    echo "  Student Guide: $TMP_DIR/STUDENT_GUIDE.txt"
-    echo "  Verification: $TMP_DIR/printer_attrs.txt, $TMP_DIR/jobs.txt"
-    echo "  Log: $LOG_FILE"
-    echo ""
-    
-    echo -e "${PURPLE}Quick Student Test:${NC}"
-    echo "  ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-printer-attributes.test | grep FLAG"
-    echo "  ipptool -tv ipp://$PRINTER_IP:631/ipp/print get-jobs.test | grep FLAG"
-    echo ""
-    
-    if grep -q "NOT FOUND" "$TMP_DIR/printer_attrs.txt" 2>/dev/null; then
-        echo -e "${RED}⚠ Some flags failed to deploy - see verification output above${NC}"
-        echo -e "${YELLOW}Manual Configuration:${NC} Access https://$PRINTER_IP → Network → Identification"
-        echo ""
-    fi
-}
-
-main
 exit 0
