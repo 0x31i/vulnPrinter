@@ -1,7 +1,5 @@
 # HP Color LaserJet Pro MFP 4301fdw - Penetration Testing Student Walkthrough v5
 
----
-
 ## Table of Contents
 1. [Pre-Engagement Setup](#pre-engagement-setup)
 2. [Phase 1: Initial Discovery and Reconnaissance](#phase-1-initial-discovery-and-reconnaissance)
