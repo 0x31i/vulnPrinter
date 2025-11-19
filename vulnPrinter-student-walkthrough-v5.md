@@ -1,5 +1,19 @@
 # HP Color LaserJet Pro MFP 4301fdw - Penetration Testing Student Walkthrough v5
 
+---
+
+## Table of Contents
+1. [Pre-Engagement Setup](#pre-engagement-setup)
+2. [Phase 1: Initial Discovery and Reconnaissance](#phase-1-initial-discovery-and-reconnaissance)
+3. [Phase 2: Service Enumeration](#phase-2-service-enumeration)
+4. [Phase 3: SNMP Protocol Analysis](#phase-3-snmp-protocol-analysis)
+5. [Phase 4: JetDirect/PRET Exploitation](#phase-4-jetdirectpret-exploitation)
+6. [Phase 5: IPP Protocol Deep Dive](#phase-5-ipp-protocol-deep-dive)
+7. [Phase 6: Web Interface Analysis](#phase-6-web-interface-analysis)
+8. [Phase 7: Print Job Intelligence Gathering](#phase-7-print-job-intelligence-gathering)
+
+---
+
 ## Target Information
 - **Target IP**: 192.168.1.131
 - **Device Type**: Network Printer (HP Color LaserJet Pro MFP 4301fdw)
@@ -24,18 +38,6 @@ The flags in this lab represent real types of sensitive data:
 - Configuration keys and tokens
 
 **Remember:** Your goal is to understand what makes information sensitive, not just to find specific patterns.
-
----
-
-## Table of Contents
-1. [Pre-Engagement Setup](#pre-engagement-setup)
-2. [Phase 1: Initial Discovery and Reconnaissance](#phase-1-initial-discovery-and-reconnaissance)
-3. [Phase 2: Service Enumeration](#phase-2-service-enumeration)
-4. [Phase 3: SNMP Protocol Analysis](#phase-3-snmp-protocol-analysis)
-5. [Phase 4: JetDirect/PRET Exploitation](#phase-4-jetdirectpret-exploitation)
-6. [Phase 5: IPP Protocol Deep Dive](#phase-5-ipp-protocol-deep-dive)
-7. [Phase 6: Web Interface Analysis](#phase-6-web-interface-analysis)
-8. [Phase 7: Print Job Intelligence Gathering](#phase-7-print-job-intelligence-gathering)
 
 ---
 
