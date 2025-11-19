@@ -1,4 +1,4 @@
-# HP Printer IoT Security CTF - Complete Instructor Writeup v5
+# HP Printer IoT Security CTF - Complete Instructor Writeup v6
 ## A Comprehensive Network Printer Penetration Testing Learning Journey
 
 > **Educational Purpose**: This writeup teaches network printer penetration testing with detailed explanations of WHY each technique works. Every command is broken down to help instructors understand the methodology and teach students real-world printer security assessment techniques.
@@ -815,7 +815,7 @@ IP-MIB::ipAdEntNetMask.192.168.1.131 = IpAddress: 255.255.255.0
 # Test alternative paths
 for path in /ipp/print /ipp/printer /ipp /printers ""; do
     echo "Testing: ipp://192.168.1.131:631$path"
-    ipptool -t ipp://192.168.1.131:631$path get-printer-attributes.test 2>&1 | grep -q "PASS" && echo "SUCCESS: Use $path" && break
+    ipptool -t ipp://192.168.1.131:631$path get-printer-attributes.test 2>&1 | awk '/PASS/ {exit 0} END {exit NR==0}' && echo "SUCCESS: Use $path" && break
 done
 ```
 
@@ -2159,7 +2159,7 @@ ping 192.168.1.131
 
 # Check if fields are populated
 snmpget -v2c -c public 192.168.1.131 1.3.6.1.2.1.1.6.0
-ipptool -tv ipp://192.168.1.131:631/ipp/print get-printer-attributes.test | grep -i "location\|contact\|info"
+ipptool -tv ipp://192.168.1.131:631/ipp/print get-printer-attributes.test | awk 'tolower($0) ~ /location|contact|info/ {print}'
 ```
 
 **Solutions**:
