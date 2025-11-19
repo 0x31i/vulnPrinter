@@ -36,8 +36,6 @@ The flags in this lab represent real types of sensitive data:
 6. [Phase 5: IPP Protocol Deep Dive](#phase-5-ipp-protocol-deep-dive)
 7. [Phase 6: Web Interface Analysis](#phase-6-web-interface-analysis)
 8. [Phase 7: Print Job Intelligence Gathering](#phase-7-print-job-intelligence-gathering)
-9. [Alternative Approaches and Tools](#alternative-approaches-and-tools)
-10. [Findings Summary](#findings-summary)
 
 ---
 
