@@ -1,5 +1,12 @@
 # HP Color LaserJet Pro MFP 4301fdw - Penetration Testing Student Walkthrough v5
 
+## Target Information
+- **Target IP**: 192.168.1.131
+- **Device Type**: Network Printer (HP Color LaserJet Pro MFP 4301fdw)
+- **Assessment Type**: Black Box Network Device Security Assessment
+- **Objective**: Enumerate all accessible information, identify security weaknesses, and document findings
+- **Prerequisites**: Credentials (Admin:68076694) obtained from previous AXIS camera engagement
+
 ## Important Note: Real-World Penetration Testing Methodology
 
 **In real penetration tests, you won't find "FLAG{}" patterns.** This walkthrough has been enhanced to teach you how to approach printer assessments as you would in the real world. Instead of searching for flags, we'll:
@@ -17,13 +24,6 @@ The flags in this lab represent real types of sensitive data:
 - Configuration keys and tokens
 
 **Remember:** Your goal is to understand what makes information sensitive, not just to find specific patterns.
-
-## Target Information
-- **Target IP**: 192.168.1.131
-- **Device Type**: Network Printer (HP Color LaserJet Pro MFP 4301fdw)
-- **Assessment Type**: Black Box Network Device Security Assessment
-- **Objective**: Enumerate all accessible information, identify security weaknesses, and document findings
-- **Prerequisites**: Credentials (Admin:68076694) obtained from previous AXIS camera engagement
 
 ---
 
