@@ -1,4 +1,4 @@
-# HP Printer IoT Security CTF - Complete Instructor Writeup v5 (Revised)
+# HP Printer IoT Security CTF - Complete Instructor Writeup v5
 ## A Comprehensive Network Printer Penetration Testing Learning Journey
 
 > **Educational Purpose**: This writeup teaches network printer penetration testing with detailed explanations of WHY each technique works. Every command is broken down to help instructors understand the methodology and teach students real-world printer security assessment techniques.
